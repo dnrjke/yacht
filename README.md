@@ -72,8 +72,15 @@ c:\yacht\
 
 세 가지 패키지(`core`, `frontend`, `backend`)가 상호작용하기 때문에 다음 순서대로 실행해야 합니다.
 
+0. **저장소 클론하기 (Clone)**
+   먼저 협업을 위해 깃허브에서 로컬 PC로 프로젝트를 복제합니다.
+   ```bash
+   git clone https://github.com/dnrjke/yacht.git
+   cd yacht
+   ```
+
 1. **초기 모듈 통합 설치**
-   최상위 폴더(`c:\yacht`)에서 아래 명령어를 실행하여 모든 하위 패키지의 의존성을 한 번에 설치합니다.
+   최상위 폴더(`c:\yacht` 등)에서 아래 명령어를 실행하여 모든 하위 패키지의 의존성을 한 번에 설치합니다.
    ```bash
    npm install
    ```
