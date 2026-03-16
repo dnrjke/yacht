@@ -1,0 +1,12 @@
+{
+  "name": "yacht-root",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend",
+    "core"
+  ],
+  "overrides": {
+    "three-mesh-bvh": "^0.8.0"
+  }
+}
