@@ -1,18 +1,22 @@
+//1. 카테고리 타입 정의
 export type RulesCategory = 
-  | 'Aces' | 'Deuces' | 'Threes' | 'Fours' | 'Fives' | 'Sixes'
+  | 'Aces' | 'Deuces' | 'Threes' | 'Fours' | 'Fives' | 'Sixes' | 'Bonus'
   | 'Choice' | 'FourOfAKind' | 'FullHouse' | 'SmallStraight'
   | 'LargeStraight' | 'Yacht';
 
+//2. 점수판 인터페이스 (기록 안 된 칸은 null)
 export interface ScoreBoard {
   [category: string]: number | null;
 }
 
+//3. 카테고리 목록 (순서대로)
 export const SCORE_CATEGORIES: RulesCategory[] = [
-  'Aces', 'Deuces', 'Threes', 'Fours', 'Fives', 'Sixes',
+  'Aces', 'Deuces', 'Threes', 'Fours', 'Fives', 'Sixes', 'Bonus',
   'Choice', 'FourOfAKind', 'FullHouse', 'SmallStraight',
   'LargeStraight', 'Yacht'
 ];
 
+//4. 카테고리에 따른 점수 계산
 export function calculateScore(dice: number[], category: RulesCategory): number {
   if (dice.length !== 5) return 0;
   
@@ -48,4 +52,21 @@ export function calculateScore(dice: number[], category: RulesCategory): number 
     default:
       return 0;
   }
+}
+
+//5. 특정 플레이어의 상단 항목(Acces~Sixes) 합계 구하기
+export function getUpperTotal(ScoreBoard: ScoreBoard): number {
+  const upperCategories: RulesCategory[] = ['Aces', 'Deuces', 'Threes', 'Fours', 'Fives', 'Sixes'];
+  return upperCategories.reduce((acc, cat) => acc + (ScoreBoard[cat] ?? 0), 0);
+}
+
+//6. 상단 합계를 기준으로 보너스 점수 +35 결정
+export function checkBonus(scoreBoard: ScoreBoard): number {
+  return getUpperTotal(scoreBoard) >= 63 ? 35 : 0;
+}
+
+//최종 합계
+export function getTotalScore(scoreBoard: ScoreBoard): number { 
+  const allCategories = Object.keys(scoreBoard) as RulesCategory[];
+  return allCategories.reduce((acc, cat) => acc + (scoreBoard[cat] ?? 0), 0);
 }
