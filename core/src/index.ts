@@ -7,4 +7,4 @@ export const YACHT_CONSTANTS = {
 export type GamePhase = 'LOBBY' | 'TOUCH_TO_START' | 'MAIN_MENU' | 'GAME' | 'GAME_OVER';
 
 export type { RulesCategory, ScoreBoard } from './scoring.js';
-export { SCORE_CATEGORIES, calculateScore } from './scoring.js';
+export { SCORE_CATEGORIES, calculateScore, checkBonus, getUpperTotal } from './scoring';
