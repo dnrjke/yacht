@@ -4,7 +4,42 @@ export const YACHT_CONSTANTS = {
   SIDES: 6,
 };
 
+/**
+ * Board geometry constants — single source of truth for frontend visuals,
+ * backend physics colliders, and camera placement.
+ *
+ * Changing PLAY_WALL_HEIGHT automatically updates:
+ *   - Keep Tray wall height  (PLAY_WALL_HEIGHT / 2)
+ *   - Camera Y position      (requiredHeight + PLAY_WALL_HEIGHT * 0.5)
+ *
+ * Changing TRAY_DEPTH automatically updates:
+ *   - Camera Z position      (-(TRAY_DEPTH / 4))
+ *   - Camera lookAt Z        (-(TRAY_DEPTH / 2 + WALL_THICKNESS / 2))
+ */
+export const BOARD_CONSTANTS = {
+  // Playing area (XZ dimensions)
+  BOARD_SIZE: 16,
+  BOARD_THICKNESS: 1,
+  WALL_THICKNESS: 1,
+
+  // ↓ Change this one value to resize the playing area walls everywhere
+  PLAY_WALL_HEIGHT: 2,
+
+  // Keep Tray
+  TRAY_DEPTH: 4,
+  TRAY_SLOT_COUNT: 5,
+  TRAY_SLOT_SPACING: 3,
+
+  // Physics-only invisible walls + ceiling.
+  // 200 units exceeds 2× the maximum possible camera height (≈ 84 on extreme-portrait mobile)
+  // so the containment volume is always above the camera's field of view.
+  PHYSICS_WALL_HEIGHT: 200,
+
+  // Cup default resting position
+  CUP_REST_Y: 5,
+} as const;
+
 export type GamePhase = 'LOBBY' | 'TOUCH_TO_START' | 'MAIN_MENU' | 'GAME' | 'GAME_OVER';
 
 export type { RulesCategory, ScoreBoard } from './scoring.js';
-export { SCORE_CATEGORIES, calculateScore, checkBonus, getUpperTotal } from './scoring';
+export { SCORE_CATEGORIES, calculateScore, checkBonus, getUpperTotal } from './scoring.js';

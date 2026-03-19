@@ -1,63 +1,363 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import * as THREE from 'three';
-import { YACHT_CONSTANTS } from '@yacht/core';
+import { YACHT_CONSTANTS, BOARD_CONSTANTS } from '@yacht/core';
 import { useFrame } from '@react-three/fiber';
+
+// Face normal in local die space for each value.
+// Matches PhysicsWorld material mapping: +x=2, -x=5, +y=1, -y=6, +z=3, -z=4
+const FACE_NORMALS: Record<number, THREE.Vector3> = {
+  1: new THREE.Vector3(0, 1, 0),
+  2: new THREE.Vector3(1, 0, 0),
+  3: new THREE.Vector3(0, 0, 1),
+  4: new THREE.Vector3(0, 0, -1),
+  5: new THREE.Vector3(-1, 0, 0),
+  6: new THREE.Vector3(0, -1, 0),
+};
+
+// In camera local space, +Z points behind the camera (toward the viewer).
+// We rotate each die so its rolled-value face aligns with local +Z → visible to user.
+const TOWARD_CAMERA = new THREE.Vector3(0, 0, 1);
+const UP_VECTOR = new THREE.Vector3(0, 1, 0); // for tray dice facing up
+
+// Scratch objects — allocated once, reused every frame to avoid GC pressure
+const _forward = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up = new THREE.Vector3();
+const _center = new THREE.Vector3();
+const _quat = new THREE.Quaternion();
+const _correction = new THREE.Quaternion();
+const _localY = new THREE.Vector3(0, 1, 0);
+const _targetPos = new THREE.Vector3();
+const _targetQuat = new THREE.Quaternion();
+
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+
+
+
+
+function createDiceTexture(value: number) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, 128, 128);
+
+  ctx.fillStyle = 'black';
+  const drawPip = (x: number, y: number) => {
+    ctx.beginPath();
+    ctx.arc(x, y, 12, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  const center = 64;
+  const offset = 32;
+
+  if ([1, 3, 5].includes(value)) drawPip(center, center);
+  if ([2, 3, 4, 5, 6].includes(value)) {
+    drawPip(center - offset, center - offset);
+    drawPip(center + offset, center + offset);
+  }
+  if ([4, 5, 6].includes(value)) {
+    drawPip(center - offset, center + offset);
+    drawPip(center + offset, center - offset);
+  }
+  if (value === 6) {
+    drawPip(center - offset, center);
+    drawPip(center + offset, center);
+  }
+
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#cccccc';
+  ctx.strokeRect(2, 2, 124, 124);
+
+  return new THREE.CanvasTexture(canvas);
+}
 
 export function PhysicsDice() {
   const socket = useGameStore(state => state.socket);
   const setCurrentDiceValues = useGameStore(state => state.setCurrentDiceValues);
+  const setDiceInCup = useGameStore(state => state.setDiceInCup);
   const diceRefs = useRef<(THREE.Mesh | null)[]>([]);
-  
-  // Playback state
-  const playbackData = useRef<{ frames: any[], currentFrame: number } | null>(null);
+  const playbackData = useRef<{ frames: any[]; currentFrame: number } | null>(null);
+  const placementTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placementAnim = useRef<{
+    startTime: number;
+    startPositions: THREE.Vector3[];
+    startQuaternions: THREE.Quaternion[];
+    startScales: number[];
+    duration: number;
+  } | null>(null);
+  const returnAnim = useRef<{
+    startTime: number;
+    startPositions: THREE.Vector3[];
+    startQuaternions: THREE.Quaternion[];
+    startScales: number[];
+    duration: number;
+  } | null>(null);
+  const lastPlacementCount = useRef(5);
+
+  const diceMaterials = useMemo(() => [
+    new THREE.MeshStandardMaterial({ map: createDiceTexture(2), roughness: 0.3 }),
+    new THREE.MeshStandardMaterial({ map: createDiceTexture(5), roughness: 0.3 }),
+    new THREE.MeshStandardMaterial({ map: createDiceTexture(1), roughness: 0.3 }),
+    new THREE.MeshStandardMaterial({ map: createDiceTexture(6), roughness: 0.3 }),
+    new THREE.MeshStandardMaterial({ map: createDiceTexture(3), roughness: 0.3 }),
+    new THREE.MeshStandardMaterial({ map: createDiceTexture(4), roughness: 0.3 }),
+  ], []);
 
   useEffect(() => {
     if (!socket) return;
 
-    // Phase 1: Realtime sync during shaking
-    const handleDiceUpdate = (diceStates: any[]) => {
-      // Ignore live updates if we are currently playing back a roll
+    const handleDiceUpdate = (data: { diceStates: any[]; diceInCup: boolean[] }) => {
       if (playbackData.current) return;
-      
-      diceStates.forEach((state, idx) => {
+      if (useGameStore.getState().isInPlacementMode) return;
+      if (useGameStore.getState().isWaitingForPlacement) return;
+      if (useGameStore.getState().isReturningToCup) return;
+
+      data.diceStates.forEach((state, idx) => {
         const mesh = diceRefs.current[idx];
         if (mesh) {
           mesh.position.set(state.position.x, state.position.y, state.position.z);
           mesh.quaternion.set(state.quaternion.x, state.quaternion.y, state.quaternion.z, state.quaternion.w);
         }
       });
+      setDiceInCup(data.diceInCup);
     };
 
-    // Phase 2: Playback precalculated roll
-    const handleRollResult = (result: { trajectory: any[], finalValues: number[] }) => {
-      // Start playback
-      playbackData.current = {
-        frames: result.trajectory,
-        currentFrame: 0
-      };
-      // Once playback starts, we might also want to set UI state (currentDiceValues)
-      // but let's wait till playback ends or do it immediately. Doing it immediately for now:
-      setCurrentDiceValues(result.finalValues);
+    const startPlayback = (frames: any[], finalValues: number[]) => {
+      // Cancel any pending placement timer if a new roll starts
+      if (placementTimer.current) clearTimeout(placementTimer.current);
+      // Exit placement/waiting mode if active
+      const store = useGameStore.getState();
+      if (store.isInPlacementMode) store.setIsInPlacementMode(false);
+      if (store.isWaitingForPlacement) store.setIsWaitingForPlacement(false);
+
+      playbackData.current = { frames, currentFrame: 0 };
+      setCurrentDiceValues(finalValues);
     };
+
+    const handleRollResult = (r: { trajectory: any[]; finalValues: number[] }) =>
+      startPlayback(r.trajectory, r.finalValues);
+
+    const handlePourResult = (r: { diceTrajectory: any[]; finalValues: number[] }) =>
+      startPlayback(r.diceTrajectory, r.finalValues);
 
     socket.on('DICE_STATES', handleDiceUpdate);
     socket.on('ROLL_RESULT', handleRollResult);
+    socket.on('POUR_RESULT', handlePourResult);
 
     return () => {
       socket.off('DICE_STATES', handleDiceUpdate);
       socket.off('ROLL_RESULT', handleRollResult);
+      socket.off('POUR_RESULT', handlePourResult);
     };
-  }, [socket, setCurrentDiceValues]);
+  }, [socket, setCurrentDiceValues, setDiceInCup]);
 
-  useFrame(() => {
-    // If we have playback data, step through it frame by frame
+  useFrame(({ camera, clock }) => {
+    const store = useGameStore.getState();
+    const cam = camera as THREE.PerspectiveCamera;
+
+    // ── Placement mode: animated camera-attached HUD + tray ─────────────────
+    if (store.isInPlacementMode) {
+      const hudDepth = 15;
+      const fovRad = cam.fov * Math.PI / 180;
+      const visibleHeight = 2 * Math.tan(fovRad / 2) * hudDepth;
+      const visibleWidth = visibleHeight * cam.aspect;
+
+      _forward.set(0, 0, -1).applyQuaternion(cam.quaternion);
+      _right.set(1, 0, 0).applyQuaternion(cam.quaternion);
+      _up.set(0, 1, 0).applyQuaternion(cam.quaternion);
+      _center.copy(cam.position).addScaledVector(_forward, hudDepth);
+
+      const hudDice = store.placementOrder; // non-kept dice indices
+      const hudCount = hudDice.length;
+
+      // Detect HUD count change → restart animation from current positions
+      if (hudCount !== lastPlacementCount.current) {
+        lastPlacementCount.current = hudCount;
+        placementAnim.current = {
+          startTime: clock.elapsedTime,
+          startPositions: diceRefs.current.map(m => m ? m.position.clone() : new THREE.Vector3()),
+          startQuaternions: diceRefs.current.map(m => m ? m.quaternion.clone() : new THREE.Quaternion()),
+          startScales: diceRefs.current.map(m => m ? m.scale.x : 1),
+          duration: 0.3,
+        };
+      }
+
+      // First-frame init
+      if (!placementAnim.current) {
+        placementAnim.current = {
+          startTime: clock.elapsedTime,
+          startPositions: diceRefs.current.map(m => m ? m.position.clone() : new THREE.Vector3()),
+          startQuaternions: diceRefs.current.map(m => m ? m.quaternion.clone() : new THREE.Quaternion()),
+          startScales: diceRefs.current.map(m => m ? m.scale.x : 1),
+          duration: 0.5,
+        };
+      }
+
+      const rawT = Math.min((clock.elapsedTime - placementAnim.current.startTime) / placementAnim.current.duration, 1);
+      const t = easeOutCubic(rawT);
+
+      // ─ HUD row: dynamically centered based on current count ───────────
+      if (hudCount > 0) {
+        const slotWidth = (visibleWidth * 0.85) / Math.max(hudCount, 1);
+        const dieScale = Math.min(slotWidth * 0.65, 1.8);
+        const spacing = slotWidth;
+
+        hudDice.forEach((dieIdx, i) => {
+          const mesh = diceRefs.current[dieIdx];
+          if (!mesh) return;
+
+          const xOffset = (i - (hudCount - 1) / 2) * spacing;
+          const yOffset = visibleHeight * 0.05;
+
+          _targetPos.copy(_center)
+            .addScaledVector(_right, xOffset)
+            .addScaledVector(_up, yOffset);
+
+          _targetQuat.copy(cam.quaternion);
+          const perspAngle = -Math.atan2(xOffset, hudDepth) * 0.85;
+          _correction.setFromAxisAngle(_localY, perspAngle);
+          _targetQuat.multiply(_correction);
+          const value = store.currentDiceValues[dieIdx];
+          const faceNormal = FACE_NORMALS[value] ?? FACE_NORMALS[1];
+          _quat.setFromUnitVectors(faceNormal, TOWARD_CAMERA);
+          _targetQuat.multiply(_quat);
+
+          mesh.position.lerpVectors(placementAnim.current!.startPositions[dieIdx], _targetPos, t);
+          mesh.quaternion.slerpQuaternions(placementAnim.current!.startQuaternions[dieIdx], _targetQuat, t);
+          const startScale = placementAnim.current!.startScales[dieIdx];
+          mesh.scale.setScalar(startScale + (dieScale - startScale) * t);
+        });
+      }
+
+      // ─ Kept dice: world-space tray slot positions ──────────────────────
+      const halfBoard = BOARD_CONSTANTS.BOARD_SIZE / 2;
+      const trayCenterZ = -(halfBoard + BOARD_CONSTANTS.WALL_THICKNESS + BOARD_CONSTANTS.TRAY_DEPTH / 2);
+      const trayStartX = -((BOARD_CONSTANTS.TRAY_SLOT_COUNT - 1) * BOARD_CONSTANTS.TRAY_SLOT_SPACING) / 2;
+
+      store.keptDiceSlots.forEach((dieIdx, slotIdx) => {
+        if (dieIdx === null) return;
+        const mesh = diceRefs.current[dieIdx];
+        if (!mesh) return;
+
+        _targetPos.set(
+          trayStartX + slotIdx * BOARD_CONSTANTS.TRAY_SLOT_SPACING,
+          0.5, // half-die sitting on tray surface
+          trayCenterZ
+        );
+        const value = store.currentDiceValues[dieIdx];
+        const faceNormal = FACE_NORMALS[value] ?? FACE_NORMALS[1];
+        _targetQuat.setFromUnitVectors(faceNormal, UP_VECTOR);
+
+        mesh.position.lerpVectors(placementAnim.current!.startPositions[dieIdx], _targetPos, t);
+        mesh.quaternion.slerpQuaternions(placementAnim.current!.startQuaternions[dieIdx], _targetQuat, t);
+        const startScale = placementAnim.current!.startScales[dieIdx];
+        mesh.scale.setScalar(startScale + (1 - startScale) * t);
+      });
+
+      return;
+    }
+
+    // ── Exited placement mode: clear animation + reset scale ─────────────────
+    if (placementAnim.current) placementAnim.current = null;
+
+    // ── Return-to-cup animation (non-kept dice only) ────────────────────
+    if (store.isReturningToCup) {
+      if (!returnAnim.current) {
+        returnAnim.current = {
+          startTime: clock.elapsedTime,
+          startPositions: diceRefs.current.map(m => m ? m.position.clone() : new THREE.Vector3()),
+          startQuaternions: diceRefs.current.map(m => m ? m.quaternion.clone() : new THREE.Quaternion()),
+          startScales: diceRefs.current.map(m => m ? m.scale.x : 1),
+          duration: 0.5,
+        };
+      }
+
+      const rawT = Math.min((clock.elapsedTime - returnAnim.current.startTime) / returnAnim.current.duration, 1);
+      const t = easeOutCubic(rawT);
+
+      const cupY = BOARD_CONSTANTS.CUP_REST_Y;
+      const keptSet = new Set(store.keptDiceSlots.filter(s => s !== null));
+      const cupOffsets = [
+        { x: -0.6, y: cupY - 1.2, z: -0.6 },
+        { x: 0.6, y: cupY - 1.2, z: -0.6 },
+        { x: -0.6, y: cupY - 1.2, z: 0.6 },
+        { x: 0.6, y: cupY - 1.2, z: 0.6 },
+        { x: 0.0, y: cupY - 0.2, z: 0.0 },
+      ];
+      let cupSlot = 0;
+
+      // Tray positions for kept dice
+      const halfBoard = BOARD_CONSTANTS.BOARD_SIZE / 2;
+      const trayCenterZ = -(halfBoard + BOARD_CONSTANTS.WALL_THICKNESS + BOARD_CONSTANTS.TRAY_DEPTH / 2);
+      const trayStartX = -((BOARD_CONSTANTS.TRAY_SLOT_COUNT - 1) * BOARD_CONSTANTS.TRAY_SLOT_SPACING) / 2;
+
+      for (let idx = 0; idx < diceRefs.current.length; idx++) {
+        const mesh = diceRefs.current[idx];
+        if (!mesh) continue;
+
+        if (keptSet.has(idx)) {
+          // Kept dice: stay at tray position (no animation needed, already placed)
+          const slotIdx = store.keptDiceSlots.indexOf(idx);
+          if (slotIdx >= 0) {
+            mesh.position.set(
+              trayStartX + slotIdx * BOARD_CONSTANTS.TRAY_SLOT_SPACING,
+              0.5,
+              trayCenterZ
+            );
+            const value = store.currentDiceValues[idx];
+            const faceNormal = FACE_NORMALS[value] ?? FACE_NORMALS[1];
+            _quat.setFromUnitVectors(faceNormal, UP_VECTOR);
+            mesh.quaternion.copy(_quat);
+            mesh.scale.setScalar(1);
+          }
+          continue;
+        }
+
+        // Non-kept dice: animate to cup
+        const off = cupOffsets[cupSlot % cupOffsets.length];
+        cupSlot++;
+        _targetPos.set(off.x, off.y, off.z);
+        mesh.position.lerpVectors(returnAnim.current.startPositions[idx], _targetPos, t);
+
+        const val = store.currentDiceValues[idx];
+        const faceNorm = FACE_NORMALS[val] ?? FACE_NORMALS[1];
+        _targetQuat.setFromUnitVectors(faceNorm, UP_VECTOR);
+
+        mesh.quaternion.slerpQuaternions(returnAnim.current.startQuaternions[idx], _targetQuat, t);
+        const startScale = returnAnim.current.startScales[idx];
+        mesh.scale.setScalar(startScale + (1 - startScale) * t);
+      }
+
+      if (rawT >= 1) {
+        returnAnim.current = null;
+        store.setIsReturningToCup(false);
+        const keptIndices = store.keptDiceSlots.filter(s => s !== null) as number[];
+        const socket = store.socket;
+        if (socket) {
+          socket.emit('COLLECT_TO_CUP', { keptIndices });
+        }
+      }
+      return;
+    }
+    if (returnAnim.current) returnAnim.current = null;
+
+    for (let idx = 0; idx < diceRefs.current.length; idx++) {
+      const mesh = diceRefs.current[idx];
+      if (mesh && mesh.scale.x !== 1) mesh.scale.setScalar(1);
+    }
+
+    // ── Trajectory playback ─────────────────────────────────────────────────
     if (playbackData.current) {
       const { frames, currentFrame } = playbackData.current;
-      
+
       if (currentFrame < frames.length) {
-        const frameState = frames[currentFrame];
-        frameState.forEach((state: any, idx: number) => {
+        frames[currentFrame].forEach((state: any, idx: number) => {
           const mesh = diceRefs.current[idx];
           if (mesh) {
             mesh.position.set(state.position.x, state.position.y, state.position.z);
@@ -66,8 +366,22 @@ export function PhysicsDice() {
         });
         playbackData.current.currentFrame++;
       } else {
-        // Playback finished
+        // Playback finished — freeze positions and wait 1s before entering placement mode
         playbackData.current = null;
+        useGameStore.getState().setIsWaitingForPlacement(true);
+        placementTimer.current = setTimeout(() => {
+          const s = useGameStore.getState();
+          s.setIsWaitingForPlacement(false);
+          // Exclude already-kept dice from the new placement order
+          const keptSet = new Set(s.keptDiceSlots.filter(v => v !== null));
+          const nonKeptValues = s.currentDiceValues
+            .map((v, i) => ({ v, i }))
+            .filter(x => !keptSet.has(x.i))
+            .sort((a, b) => a.v !== b.v ? a.v - b.v : a.i - b.i)
+            .map(x => x.i);
+          s.setPlacementOrder(nonKeptValues);
+          s.setIsInPlacementMode(true);
+        }, 400);
       }
     }
   });
@@ -75,15 +389,25 @@ export function PhysicsDice() {
   return (
     <>
       {Array.from({ length: YACHT_CONSTANTS.DICE_COUNT }).map((_, idx) => (
-        <mesh 
-          key={idx} 
-          ref={el => diceRefs.current[idx] = el}
-          castShadow 
+        <mesh
+          key={idx}
+          ref={el => { diceRefs.current[idx] = el; }}
+          castShadow
           receiveShadow
+          material={diceMaterials}
+          onPointerDown={(e) => {
+            const s = useGameStore.getState();
+            if (!s.isInPlacementMode) return;
+            e.stopPropagation();
+            const isKept = s.keptDiceSlots.includes(idx);
+            if (isKept) {
+              s.unkeepDie(idx);
+            } else if (s.placementOrder.includes(idx)) {
+              s.keepDie(idx);
+            }
+          }}
         >
           <boxGeometry args={[1, 1, 1]} />
-          <meshStandardMaterial color="white" />
-          {/* Add pip visual mapping later, right now it's just a blank cube */}
         </mesh>
       ))}
     </>

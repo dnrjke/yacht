@@ -22,24 +22,42 @@ const PORT = process.env.PORT || 3001;
 
 // Basic physics world setup for deterministic simulation
 const gamePhysics = new PhysicsWorld();
+let isSimulating = false; // true while simulatePour/simulateRoll is running synchronously
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
+  // Spawn dice in cup for new connection
+  gamePhysics.spawnDiceInCup();
+
   // When a user moves their cup (shaking phase)
   socket.on('CUP_TRANSFORM', (data) => {
-    // Only process if it's the active player's turn (add turn logic later)
     gamePhysics.updateCupTransform(data.position, data.quaternion);
+    // Check if any dice on the board should be collected into the cup
+    gamePhysics.checkCollection();
   });
 
-  // When a user throws the dice
+  // When a user throws the dice (legacy button)
   socket.on('ROLL_DICE', (throwData) => {
-    // Pause live broadcast loop? Or just run standalone calculation
-    // Precalculate trajectory deterministically
+    isSimulating = true;
     const result = gamePhysics.simulateRoll(throwData.velocity, throwData.angularVelocity);
-    
-    // Send the pre-calculated animation data to everyone
+    isSimulating = false;
     io.emit('ROLL_RESULT', result);
+  });
+
+  // Pour cup: tilt and release dice
+  socket.on('POUR_CUP', (data: { position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } }) => {
+    if (!gamePhysics.allDiceReadyToPour()) return;
+    isSimulating = true;
+    const result = gamePhysics.simulatePour(data.position, data.quaternion);
+    isSimulating = false;
+    io.emit('POUR_RESULT', result);
+  });
+
+  // Client finished return-to-cup animation — move non-kept dice into cup
+  socket.on('COLLECT_TO_CUP', (data?: { keptIndices?: number[] }) => {
+    const keptIndices = data?.keptIndices ?? [];
+    gamePhysics.spawnNonKeptDiceInCup(keptIndices);
   });
 
   socket.on('disconnect', () => {
@@ -49,12 +67,12 @@ io.on('connection', (socket) => {
 
 // Physics Loop (approx 60fps)
 setInterval(() => {
+  if (isSimulating) return; // Skip while simulatePour/simulateRoll owns the physics world
   gamePhysics.step();
+  gamePhysics.checkCollection();
   const diceStates = gamePhysics.getDiceStates();
-  
-  // Broadcast the current positions of the dice to all clients
-  // If we only broadcast during "SHAKE" phase, we should add phase checks here.
-  io.emit('DICE_STATES', diceStates);
+
+  io.emit('DICE_STATES', { diceStates, diceInCup: gamePhysics.diceInCup });
 }, 1000 / 60);
 
 app.get('/health', (req, res) => {

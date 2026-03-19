@@ -26,6 +26,26 @@ interface GameState {
   // Temporary: current roll dice values for UI display
   currentDiceValues: number[];
   setCurrentDiceValues: (vals: number[]) => void;
+
+  // Dice-in-cup tracking
+  diceInCup: boolean[];
+  setDiceInCup: (val: boolean[]) => void;
+  allDiceCollected: boolean;
+
+  // Placement mode: dice displayed in HUD after rolling
+  isInPlacementMode: boolean;
+  setIsInPlacementMode: (val: boolean) => void;
+  isWaitingForPlacement: boolean;
+  setIsWaitingForPlacement: (val: boolean) => void;
+  isReturningToCup: boolean; // true while dice animate back into the cup
+  setIsReturningToCup: (val: boolean) => void;
+  placementOrder: number[];
+  setPlacementOrder: (val: number[]) => void;
+
+  // Keep tray: which die index is in each of the 5 tray slots (null = empty)
+  keptDiceSlots: (number | null)[];
+  keepDie: (dieIndex: number) => void;   // HUD → first empty tray slot
+  unkeepDie: (dieIndex: number) => void; // tray → back to HUD row
 }
 
 const initialScores = SCORE_CATEGORIES.reduce((acc, cat) => {
@@ -70,4 +90,42 @@ export const useGameStore = create<GameState>((set) => ({
 
   currentDiceValues: [1, 1, 1, 1, 1],
   setCurrentDiceValues: (currentDiceValues) => set({ currentDiceValues }),
+
+  diceInCup: [true, true, true, true, true],
+  setDiceInCup: (diceInCup) => set((state) => {
+    // allDiceCollected only considers non-kept dice
+    const keptSet = new Set(state.keptDiceSlots.filter(s => s !== null));
+    const allCollected = diceInCup.every((inCup, i) => inCup || keptSet.has(i));
+    return { diceInCup, allDiceCollected: allCollected };
+  }),
+  allDiceCollected: true,
+
+  isInPlacementMode: false,
+  setIsInPlacementMode: (isInPlacementMode) => set({ isInPlacementMode }),
+  isWaitingForPlacement: false,
+  setIsWaitingForPlacement: (isWaitingForPlacement) => set({ isWaitingForPlacement }),
+  isReturningToCup: false,
+  setIsReturningToCup: (isReturningToCup) => set({ isReturningToCup }),
+  placementOrder: [0, 1, 2, 3, 4],
+  setPlacementOrder: (placementOrder) => set({ placementOrder }),
+
+  keptDiceSlots: [null, null, null, null, null],
+  keepDie: (dieIndex) => set((state) => {
+    const newSlots = [...state.keptDiceSlots];
+    const firstEmpty = newSlots.findIndex(s => s === null);
+    if (firstEmpty === -1) return state; // all 5 slots full
+    newSlots[firstEmpty] = dieIndex;
+    const newOrder = state.placementOrder.filter(idx => idx !== dieIndex);
+    return { keptDiceSlots: newSlots, placementOrder: newOrder };
+  }),
+  unkeepDie: (dieIndex) => set((state) => {
+    const newSlots = state.keptDiceSlots.map(s => s === dieIndex ? null : s);
+    const allHUDDice = [...state.placementOrder, dieIndex];
+    const values = state.currentDiceValues;
+    const newOrder = allHUDDice
+      .map(i => ({ v: values[i], i }))
+      .sort((a, b) => a.v !== b.v ? a.v - b.v : a.i - b.i)
+      .map(x => x.i);
+    return { keptDiceSlots: newSlots, placementOrder: newOrder };
+  }),
 }));
