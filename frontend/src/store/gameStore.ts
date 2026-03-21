@@ -39,6 +39,8 @@ interface GameState {
   setIsWaitingForPlacement: (val: boolean) => void;
   isReturningToCup: boolean; // true while dice animate back into the cup
   setIsReturningToCup: (val: boolean) => void;
+  isSyncingDice: boolean; // true while waiting for server's COLLECTION_DONE
+  setIsSyncingDice: (val: boolean) => void;
   placementOrder: number[];
   setPlacementOrder: (val: number[]) => void;
 
@@ -106,6 +108,8 @@ export const useGameStore = create<GameState>((set) => ({
   setIsWaitingForPlacement: (isWaitingForPlacement) => set({ isWaitingForPlacement }),
   isReturningToCup: false,
   setIsReturningToCup: (isReturningToCup) => set({ isReturningToCup }),
+  isSyncingDice: false,
+  setIsSyncingDice: (isSyncingDice) => set({ isSyncingDice }),
   placementOrder: [0, 1, 2, 3, 4],
   setPlacementOrder: (placementOrder) => set({ placementOrder }),
 

@@ -14,17 +14,18 @@ export class PhysicsWorld {
   public cupLidBody: CANNON.Body;   // Transparent lid — active during drag, removed during pour
   public diceInCup: boolean[] = [true, true, true, true, true];
   public keptDice: boolean[] = [false, false, false, false, false];
+  public currentDiceValues: number[] = [1, 1, 1, 1, 1];
 
-  // Dice dimensions (approximate 1 unit cube for now)
-  private diceShape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
-  private diceMass = 1; // 1kg
+  // Dice dimensions (2 units wide)
+  private diceShape = new CANNON.Box(new CANNON.Vec3(1.0, 1.0, 1.0));
+  private diceMass = 8; // 8kg (volume doubled)
   private defaultMaterial: CANNON.Material;
   private subSteps = 16;
   private subStepDt = 1 / 960; // 16 sub-steps × 1/960 s = 1/60 s per frame
 
   constructor() {
     this.world = new CANNON.World({
-      gravity: new CANNON.Vec3(0, -9.82, 0),
+      gravity: new CANNON.Vec3(0, -9.82 * 4.0, 0),
       allowSleep: true, // Required for allSleeping checks in simulatePour/simulateRoll
     });
 
@@ -63,10 +64,10 @@ export class PhysicsWorld {
     // Invisible border walls — use PHYSICS_WALL_HEIGHT (much taller than visual)
     // to guarantee dice never escape, regardless of visual wall height.
     const { BOARD_SIZE, WALL_THICKNESS, PHYSICS_WALL_HEIGHT } = BOARD_CONSTANTS;
-    const halfBoard   = BOARD_SIZE / 2;                  // 8
-    const hw          = WALL_THICKNESS / 2;              // 0.5
-    const totalWidth  = BOARD_SIZE + WALL_THICKNESS * 2; // 18
-    const wallHalfH   = PHYSICS_WALL_HEIGHT / 2;
+    const halfBoard = BOARD_SIZE / 2;                  // 8
+    const hw = WALL_THICKNESS / 2;              // 0.5
+    const totalWidth = BOARD_SIZE + WALL_THICKNESS * 2; // 18
+    const wallHalfH = PHYSICS_WALL_HEIGHT / 2;
     const wallCenterY = PHYSICS_WALL_HEIGHT / 2;
 
     const borderBody = new CANNON.Body({ mass: 0, material: this.defaultMaterial });
@@ -74,12 +75,12 @@ export class PhysicsWorld {
     // Top & Bottom walls (-z, +z)
     const tbShape = new CANNON.Box(new CANNON.Vec3(totalWidth / 2, wallHalfH, hw));
     borderBody.addShape(tbShape, new CANNON.Vec3(0, wallCenterY, -(halfBoard + hw))); // Top
-    borderBody.addShape(tbShape, new CANNON.Vec3(0, wallCenterY,  (halfBoard + hw))); // Bottom
+    borderBody.addShape(tbShape, new CANNON.Vec3(0, wallCenterY, (halfBoard + hw))); // Bottom
 
     // Left & Right walls (-x, +x)
     const lrShape = new CANNON.Box(new CANNON.Vec3(hw, wallHalfH, halfBoard));
     borderBody.addShape(lrShape, new CANNON.Vec3(-(halfBoard + hw), wallCenterY, 0)); // Left
-    borderBody.addShape(lrShape, new CANNON.Vec3( (halfBoard + hw), wallCenterY, 0)); // Right
+    borderBody.addShape(lrShape, new CANNON.Vec3((halfBoard + hw), wallCenterY, 0)); // Right
 
     this.world.addBody(borderBody);
 
@@ -115,21 +116,15 @@ export class PhysicsWorld {
       position: new CANNON.Vec3(0, 5, 0)
     });
     // Cup base
-    const cupBaseShape = new CANNON.Cylinder(2, 2, 0.5, 16);
-    this.cupBody.addShape(cupBaseShape, new CANNON.Vec3(0, -2, 0));
+    const cupBaseShape = new CANNON.Cylinder(4, 4, 1.0, 16);
+    this.cupBody.addShape(cupBaseShape, new CANNON.Vec3(0, -4, 0));
 
-    // Cup walls: 8 box segments arranged in an octagon.
-    // wallThickness is intentionally enormous (4.0) — the outer half is invisible
-    // beyond the visual cup surface, but guarantees that no matter how fast the cup
-    // is shaken, a die cannot travel through the full wall thickness in a single
-    // physics step (1/60 s). Inner surface stays at innerRadius; outer face is at
-    // innerRadius + wallThickness = 6.0, which no realistic throw can cross in one step.
-    const wallHeight = 4.0;
+    const wallHeight = 8.0;
     const wallThickness = 4.0;   // thick outer shell; sub-stepping is the primary fix
-    const innerRadius = 2.0;
+    const innerRadius = 4.0;
     const segmentCount = 8;
     const segmentAngle = (2 * Math.PI) / segmentCount;
-    const segmentWidth = 2 * innerRadius * Math.tan(segmentAngle / 2); // ~1.53
+    const segmentWidth = 2 * innerRadius * Math.tan(segmentAngle / 2); // ~3.31
 
     for (let i = 0; i < segmentCount; i++) {
       const angle = i * segmentAngle;
@@ -151,10 +146,12 @@ export class PhysicsWorld {
     // Moved far away at the start of simulatePour() so dice can fall out freely.
     this.cupLidBody = new CANNON.Body({
       type: CANNON.Body.KINEMATIC,
-      position: new CANNON.Vec3(0, 7, 0), // cup y(5) + lid offset(2)
+      position: new CANNON.Vec3(0, 5 + wallHeight / 2 + 0.5, 0), // cup y(5) + half wall height + half lid thickness
     });
-    const lidShape = new CANNON.Cylinder(1.95, 1.95, 0.1, 16);
-    this.cupLidBody.addShape(lidShape);
+    // Lid is roughly the radius of the outer bounding box
+    const lidRadius = innerRadius + wallThickness;
+    const cupLidShape = new CANNON.Cylinder(lidRadius, lidRadius, 1.0, 16);
+    this.cupLidBody.addShape(cupLidShape);
     this.world.addBody(this.cupLidBody);
 
     // Spawn dice inside cup initially
@@ -165,11 +162,11 @@ export class PhysicsWorld {
     // Position dice inside cup in a 2x2 grid + 1 on top
     const cupPos = this.cupBody.position;
     const offsets = [
-      { x: -0.6, y: -1.2, z: -0.6 },
-      { x:  0.6, y: -1.2, z: -0.6 },
-      { x: -0.6, y: -1.2, z:  0.6 },
-      { x:  0.6, y: -1.2, z:  0.6 },
-      { x:  0.0, y: -0.2, z:  0.0 }, // top layer
+      { x: -1.2, y: -2.5, z: -1.2 },
+      { x: 1.2, y: -2.5, z: -1.2 },
+      { x: -1.2, y: -2.5, z: 1.2 },
+      { x: 1.2, y: -2.5, z: 1.2 },
+      { x: 0.0, y: -0.5, z: 0.0 }, // top layer
     ];
     this.diceBodies.forEach((dice, i) => {
       const off = offsets[i];
@@ -214,8 +211,8 @@ export class PhysicsWorld {
     }
   }
 
-  spawnNonKeptDiceInCup(keptIndices: number[]): void {
-    const keptSet = new Set(keptIndices);
+  spawnNonKeptDiceInCup(keptIndices: (number | null)[]): void {
+    const keptSet = new Set(keptIndices.filter(i => i !== null) as number[]);
     // Determine which dice are kept
     this.keptDice = this.diceBodies.map((_, i) => keptSet.has(i));
     this.diceInCup = this.diceBodies.map((_, i) => !keptSet.has(i));
@@ -227,35 +224,47 @@ export class PhysicsWorld {
 
     // 1. Position kept dice exactly in their slots based on the client order
     keptIndices.forEach((dieIdx, slotIdx) => {
+      if (dieIdx === null) return;
       const dice = this.diceBodies[dieIdx];
       if (!dice) return;
 
       dice.position.set(
         trayStartX + slotIdx * TRAY_SLOT_SPACING,
-        0.5,
+        1.0,
         trayCenterZ
       );
       dice.velocity.setZero();
       dice.angularVelocity.setZero();
-      this.snapRotationToValue(dice);
+      this.snapRotationToValue(dice, this.currentDiceValues[dieIdx]);
+      // Freeze kept dice so they don't get knocked over by rolling dice
+      dice.type = CANNON.Body.STATIC;
+      dice.updateMassProperties();
     });
 
     // 2. Position non-kept dice inside the cup
     const cupOffsets = [
-      { x: -0.6, y: -1.2, z: -0.6 },
-      { x:  0.6, y: -1.2, z: -0.6 },
-      { x: -0.6, y: -1.2, z:  0.6 },
-      { x:  0.6, y: -1.2, z:  0.6 },
-      { x:  0.0, y: -0.2, z:  0.0 },
+      { x: -1.2, y: -2.5, z: -1.2 },
+      { x: 1.2, y: -2.5, z: -1.2 },
+      { x: -1.2, y: -2.5, z: 1.2 },
+      { x: 1.2, y: -2.5, z: 1.2 },
+      { x: 0.0, y: -0.5, z: 0.0 },
     ];
     let cupSlot = 0;
     this.diceBodies.forEach((dice, i) => {
       if (!keptSet.has(i)) {
+        dice.type = CANNON.Body.DYNAMIC;
+        dice.updateMassProperties();
+
         const off = cupOffsets[cupSlot % cupOffsets.length];
         dice.position.set(cupPos.x + off.x, cupPos.y + off.y, cupPos.z + off.z);
         dice.velocity.setZero();
         dice.angularVelocity.setZero();
-        this.snapRotationToValue(dice);
+        this.snapRotationToValue(dice, this.currentDiceValues[i]);
+        
+        // Prevent tumble/face-change while residing inside the cup before the roll
+        dice.fixedRotation = true;
+        dice.updateMassProperties();
+        
         dice.wakeUp();
         cupSlot++;
       }
@@ -263,7 +272,7 @@ export class PhysicsWorld {
   }
 
   /** Aligns the die exactly with an axis so the currently determined face is facing up (0,1,0) */
-  private snapRotationToValue(body: CANNON.Body): void {
+  private snapRotationToValue(body: CANNON.Body, forcedValue?: number): void {
     const faceNormals = [
       new CANNON.Vec3(0, 1, 0),   // 1
       new CANNON.Vec3(0, -1, 0),  // 6
@@ -275,15 +284,21 @@ export class PhysicsWorld {
     const worldUp = new CANNON.Vec3(0, 1, 0);
 
     let bestFace = faceNormals[0];
-    let maxDot = -Infinity;
 
-    for (const localFace of faceNormals) {
-      const worldFace = new CANNON.Vec3();
-      body.quaternion.vmult(localFace, worldFace);
-      const dot = worldFace.dot(worldUp);
-      if (dot > maxDot) {
-        maxDot = dot;
-        bestFace = localFace;
+    if (forcedValue !== undefined) {
+      // Find the normal associated with forcedValue
+      const targetIndices: Record<number, number> = { 1:0, 6:1, 2:2, 5:3, 3:4, 4:5 };
+      bestFace = faceNormals[targetIndices[forcedValue]];
+    } else {
+      let maxDot = -Infinity;
+      for (const localFace of faceNormals) {
+        const worldFace = new CANNON.Vec3();
+        body.quaternion.vmult(localFace, worldFace);
+        const dot = worldFace.dot(worldUp);
+        if (dot > maxDot) {
+          maxDot = dot;
+          bestFace = localFace;
+        }
       }
     }
 
@@ -311,8 +326,14 @@ export class PhysicsWorld {
     // Remove lid before pour so dice can exit freely
     this.cupLidBody.position.set(0, -100, 0);
 
-    // Ensure all dice are awake
-    this.diceBodies.forEach(d => d.wakeUp());
+    // Ensure non-kept dice are awake and free to rotate
+    this.diceBodies.forEach((d, i) => {
+      if (!this.keptDice[i]) {
+        d.fixedRotation = false;
+        d.updateMassProperties();
+        d.wakeUp();
+      }
+    });
 
     const diceTrajectory: PourResult['diceTrajectory'] = [];
     const cupTrajectory: PourResult['cupTrajectory'] = [];
@@ -347,7 +368,7 @@ export class PhysicsWorld {
     const liftedQuat = this.cupBody.quaternion.clone();
     for (let f = 0; f < liftFrames; f++) {
       const t = (f + 1) / liftFrames;
-      this.cupBody.position.set(startPos.x, startPos.y + t * 10, startPos.z);
+      this.cupBody.position.set(startPos.x, startPos.y + t * 20, startPos.z);
       this.cupBody.quaternion.copy(liftedQuat);
 
       for (let _s = 0; _s < this.subSteps; _s++) { this.world.step(this.subStepDt); };
@@ -360,6 +381,10 @@ export class PhysicsWorld {
 
     // Phase 3: Wait for dice to settle (max 600 frames)
     const maxSettleFrames = 600;
+    let calmFrames = 0;
+    const requiredCalmFrames = 30; // 0.5 sec at 60fps
+    const speedThresholdSq = 0.05; // ~0.22 m/s threshold
+
     for (let f = 0; f < maxSettleFrames; f++) {
       for (let _s = 0; _s < this.subSteps; _s++) { this.world.step(this.subStepDt); };
       diceTrajectory.push(this.getDiceStates());
@@ -368,12 +393,31 @@ export class PhysicsWorld {
         quaternion: { x: this.cupBody.quaternion.x, y: this.cupBody.quaternion.y, z: this.cupBody.quaternion.z, w: this.cupBody.quaternion.w }
       });
 
+      // Custom Hysteresis: Check if all dynamic dice are moving significantly slower than the visual threshold
+      let allCalm = true;
+      for (const b of this.diceBodies) {
+        if (b.type === CANNON.Body.STATIC) continue;
+        if (b.velocity.lengthSquared() > speedThresholdSq || b.angularVelocity.lengthSquared() > speedThresholdSq) {
+          allCalm = false;
+          break;
+        }
+      }
+
+      if (allCalm) {
+        calmFrames++;
+      } else {
+        calmFrames = 0;
+      }
+
       const allSleeping = this.diceBodies.every(b => b.sleepState === CANNON.Body.SLEEPING);
-      if (allSleeping) break;
+      if (allSleeping || calmFrames >= requiredCalmFrames) {
+        break;
+      }
     }
 
     // Determine final face values
     const finalValues = this.getFinalDiceValues();
+    this.currentDiceValues = finalValues;
 
     // Reset state
     this.diceInCup = [false, false, false, false, false];
@@ -422,12 +466,12 @@ export class PhysicsWorld {
     }
   }
 
-  updateCupTransform(position: {x: number, y: number, z: number}, quaternion: {x: number, y: number, z: number, w: number}) {
+  updateCupTransform(position: { x: number, y: number, z: number }, quaternion: { x: number, y: number, z: number, w: number }) {
     this.cupBody.position.set(position.x, position.y, position.z);
     this.cupBody.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
 
     // Move lid to the cup's top opening in world space
-    const lidLocalOffset = new CANNON.Vec3(0, 2.0, 0);
+    const lidLocalOffset = new CANNON.Vec3(0, 4.0, 0);
     const lidWorldOffset = new CANNON.Vec3();
     this.cupBody.quaternion.vmult(lidLocalOffset, lidWorldOffset);
     this.cupLidBody.position.set(
@@ -441,7 +485,12 @@ export class PhysicsWorld {
     // (sleeping dice ignore kinematic body motion)
     for (let i = 0; i < this.diceBodies.length; i++) {
       if (this.diceInCup[i]) {
-        this.diceBodies[i].wakeUp();
+        const d = this.diceBodies[i];
+        if (d.fixedRotation) {
+          d.fixedRotation = false;
+          d.updateMassProperties();
+        }
+        d.wakeUp();
       }
     }
   }
@@ -454,11 +503,13 @@ export class PhysicsWorld {
   }
 
   // Pre-calculate the entire roll deterministically
-  simulateRoll(throwVelocity: {x: number, y: number, z: number}, throwAngular: {x: number, y: number, z: number}) {
+  simulateRoll(throwVelocity: { x: number, y: number, z: number }, throwAngular: { x: number, y: number, z: number }) {
     // 1. Give dice impulse
     this.diceBodies.forEach(dice => {
+      dice.fixedRotation = false;
+      dice.updateMassProperties();
       // Small random variations per dice so they don't stick together perfectly
-      const vOffset = new CANNON.Vec3((Math.random()-0.5)*2, (Math.random()-0.5)*2, (Math.random()-0.5)*2);
+      const vOffset = new CANNON.Vec3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
       dice.velocity.set(throwVelocity.x + vOffset.x, throwVelocity.y + vOffset.y, throwVelocity.z + vOffset.z);
       dice.angularVelocity.set(throwAngular.x + vOffset.x, throwAngular.y + vOffset.y, throwAngular.z + vOffset.z);
       dice.wakeUp(); // ensure they aren't sleeping
@@ -467,15 +518,35 @@ export class PhysicsWorld {
     const trajectory = [];
     const maxSteps = 60 * 10; // 10 seconds timeout max
     let steps = 0;
-    
+    let calmFrames = 0;
+    const requiredCalmFrames = 30;
+    const speedThresholdSq = 0.05;
+
     // 2. Loop until all dice are asleep or timeout
     while (steps < maxSteps) {
       for (let _s = 0; _s < this.subSteps; _s++) { this.world.step(this.subStepDt); };
       trajectory.push(this.getDiceStates());
-      
+
+      let allCalm = true;
+      for (const b of this.diceBodies) {
+        if (b.type === CANNON.Body.STATIC) continue;
+        if (b.velocity.lengthSquared() > speedThresholdSq || b.angularVelocity.lengthSquared() > speedThresholdSq) {
+          allCalm = false;
+          break;
+        }
+      }
+
+      if (allCalm) {
+        calmFrames++;
+      } else {
+        calmFrames = 0;
+      }
+
       const allSleeping = this.diceBodies.every(b => b.sleepState === CANNON.Body.SLEEPING);
-      if (allSleeping) break;
-      
+      if (allSleeping || calmFrames >= requiredCalmFrames) {
+        break;
+      }
+
       steps++;
     }
 

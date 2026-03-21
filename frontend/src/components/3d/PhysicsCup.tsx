@@ -114,13 +114,13 @@ export function PhysicsCup() {
       onPointerOut={() => document.body.style.cursor = 'auto'}
     >
       {/* Cup base */}
-      <mesh castShadow receiveShadow position={[0, -2, 0]}>
-        <cylinderGeometry args={[2.2, 2.2, 0.2, 32]} />
+      <mesh castShadow receiveShadow position={[0, -4, 0]}>
+        <cylinderGeometry args={[4.4, 4.4, 0.4, 32]} />
         <meshStandardMaterial color="#8B4513" />
       </mesh>
       {/* Cup wall */}
       <mesh castShadow receiveShadow>
-        <cylinderGeometry args={[2.2, 2.2, 4, 32, 1, true]} />
+        <cylinderGeometry args={[4.4, 4.4, 8, 32, 1, true]} />
         <meshStandardMaterial color="#8B4513" side={THREE.DoubleSide} />
       </mesh>
     </group>

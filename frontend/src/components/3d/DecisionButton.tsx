@@ -87,13 +87,14 @@ export function DecisionButton() {
         e.stopPropagation();
         const store = useGameStore.getState();
         store.setIsInPlacementMode(false);
+        store.setIsSyncingDice(true);
 
         if (store.placementOrder.length > 0) {
           // There are non-kept dice → animate them back to cup
           store.setIsReturningToCup(true);
         } else {
           // All dice are kept → just tell server directly
-          const keptIndices = store.keptDiceSlots.filter(s => s !== null) as number[];
+          const keptIndices = store.keptDiceSlots; // send the array containing nulls as well
           if (store.socket) {
             store.socket.emit('COLLECT_TO_CUP', { keptIndices });
           }

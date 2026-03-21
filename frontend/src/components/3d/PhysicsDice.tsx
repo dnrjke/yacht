@@ -117,6 +117,7 @@ export function PhysicsDice() {
       if (useGameStore.getState().isInPlacementMode) return;
       if (useGameStore.getState().isWaitingForPlacement) return;
       if (useGameStore.getState().isReturningToCup) return;
+      if (useGameStore.getState().isSyncingDice) return;
 
       data.diceStates.forEach((state, idx) => {
         const mesh = diceRefs.current[idx];
@@ -135,6 +136,7 @@ export function PhysicsDice() {
       const store = useGameStore.getState();
       if (store.isInPlacementMode) store.setIsInPlacementMode(false);
       if (store.isWaitingForPlacement) store.setIsWaitingForPlacement(false);
+      if (store.isSyncingDice) store.setIsSyncingDice(false);
 
       playbackData.current = { frames, currentFrame: 0 };
       setCurrentDiceValues(finalValues);
@@ -146,14 +148,26 @@ export function PhysicsDice() {
     const handlePourResult = (r: { diceTrajectory: any[]; finalValues: number[] }) =>
       startPlayback(r.diceTrajectory, r.finalValues);
 
+    const handleRollPlayback = (r: { trajectory: any[]; finalValues: number[] }) =>
+      startPlayback(r.trajectory, r.finalValues);
+
+    const handleCollectionDone = () => {
+      useGameStore.getState().setIsSyncingDice(false);
+    };
+
     socket.on('DICE_STATES', handleDiceUpdate);
     socket.on('ROLL_RESULT', handleRollResult);
     socket.on('POUR_RESULT', handlePourResult);
+    socket.on('ROLL_PLAYBACK', handleRollPlayback);
+    socket.on('COLLECTION_DONE', handleCollectionDone);
 
     return () => {
       socket.off('DICE_STATES', handleDiceUpdate);
       socket.off('ROLL_RESULT', handleRollResult);
       socket.off('POUR_RESULT', handlePourResult);
+      socket.off('ROLL_PLAYBACK', handleRollPlayback);
+      socket.off('COLLECTION_DONE', handleCollectionDone);
+      if (placementTimer.current) clearTimeout(placementTimer.current);
     };
   }, [socket, setCurrentDiceValues, setDiceInCup]);
 
@@ -205,14 +219,17 @@ export function PhysicsDice() {
       // ─ HUD row: dynamically centered based on current count ───────────
       if (hudCount > 0) {
         const slotWidth = (visibleWidth * 0.85) / Math.max(hudCount, 1);
-        const dieScale = Math.min(slotWidth * 0.65, 1.8);
+        // Halve the scale because the base physics/mesh geometry is now 2x2x2 instead of 1x1x1
+        const dieScale = Math.min(slotWidth * 0.65, 1.8) / 2;
         const spacing = slotWidth;
+        const totalWidth = (hudCount - 1) * spacing;
+        const startX = -totalWidth / 2;
 
         hudDice.forEach((dieIdx, i) => {
           const mesh = diceRefs.current[dieIdx];
           if (!mesh) return;
 
-          const xOffset = (i - (hudCount - 1) / 2) * spacing;
+          const xOffset = startX + i * spacing;
           const yOffset = visibleHeight * 0.05;
 
           _targetPos.copy(_center)
@@ -247,7 +264,7 @@ export function PhysicsDice() {
 
         _targetPos.set(
           trayStartX + slotIdx * BOARD_CONSTANTS.TRAY_SLOT_SPACING,
-          0.5, // half-die sitting on tray surface
+          1.0, // half-die sitting on tray surface (dice size 2 implies half height 1)
           trayCenterZ
         );
         const value = store.currentDiceValues[dieIdx];
@@ -284,11 +301,11 @@ export function PhysicsDice() {
       const cupY = BOARD_CONSTANTS.CUP_REST_Y;
       const keptSet = new Set(store.keptDiceSlots.filter(s => s !== null));
       const cupOffsets = [
-        { x: -0.6, y: cupY - 1.2, z: -0.6 },
-        { x: 0.6, y: cupY - 1.2, z: -0.6 },
-        { x: -0.6, y: cupY - 1.2, z: 0.6 },
-        { x: 0.6, y: cupY - 1.2, z: 0.6 },
-        { x: 0.0, y: cupY - 0.2, z: 0.0 },
+        { x: -1.2, y: cupY - 2.5, z: -1.2 },
+        { x: 1.2, y: cupY - 2.5, z: -1.2 },
+        { x: -1.2, y: cupY - 2.5, z: 1.2 },
+        { x: 1.2, y: cupY - 2.5, z: 1.2 },
+        { x: 0.0, y: cupY - 0.5, z: 0.0 },
       ];
       let cupSlot = 0;
 
@@ -307,7 +324,7 @@ export function PhysicsDice() {
           if (slotIdx >= 0) {
             mesh.position.set(
               trayStartX + slotIdx * BOARD_CONSTANTS.TRAY_SLOT_SPACING,
-              0.5,
+              1.0,
               trayCenterZ
             );
             const value = store.currentDiceValues[idx];
@@ -337,7 +354,7 @@ export function PhysicsDice() {
       if (rawT >= 1) {
         returnAnim.current = null;
         store.setIsReturningToCup(false);
-        const keptIndices = store.keptDiceSlots.filter(s => s !== null) as number[];
+        const keptIndices = store.keptDiceSlots;
         const socket = store.socket;
         if (socket) {
           socket.emit('COLLECT_TO_CUP', { keptIndices });
@@ -407,7 +424,7 @@ export function PhysicsDice() {
             }
           }}
         >
-          <boxGeometry args={[1, 1, 1]} />
+          <boxGeometry args={[2, 2, 2]} />
         </mesh>
       ))}
     </>
