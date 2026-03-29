@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Socket } from 'socket.io-client';
-import { GamePhase, RulesCategory, SCORE_CATEGORIES, checkBonus} from '@yacht/core';
+import { GamePhase, RulesCategory, SCORE_CATEGORIES, checkBonus, calculateScore} from '@yacht/core';
 
 interface GameState {
   socket: Socket | null;
@@ -27,6 +27,9 @@ interface GameState {
   currentDiceValues: number[];
   setCurrentDiceValues: (vals: number[]) => void;
 
+  //예상 점수 상태
+  previewScores: Record<RulesCategory, number>;
+
   // Dice-in-cup tracking
   diceInCup: boolean[];
   setDiceInCup: (val: boolean[]) => void;
@@ -48,6 +51,11 @@ interface GameState {
   keptDiceSlots: (number | null)[];
   keepDie: (dieIndex: number) => void;   // HUD → first empty tray slot
   unkeepDie: (dieIndex: number) => void; // tray → back to HUD row
+
+  // 턴 관리 상태 추가
+  currentTurn: 'p1' | 'p2'; 
+  rollCount: number;
+  endTurn: () => void; // 턴 종료 함수
 }
 
 const initialScores = SCORE_CATEGORIES.reduce((acc, cat) => {
@@ -90,8 +98,26 @@ export const useGameStore = create<GameState>((set) => ({
     };
   }),
 
+  //주사위 값이 바뀔 때 예상 점수(previewScores)를 함께 계산
   currentDiceValues: [1, 1, 1, 1, 1],
-  setCurrentDiceValues: (currentDiceValues) => set({ currentDiceValues }),
+  previewScores: {} as Record<RulesCategory, number>, // 초기값
+  setCurrentDiceValues: (vals) => set(() => {
+    const newPreviews = {} as Record<RulesCategory, number>;
+    
+    // 주사위 5개 값을 바탕으로 각 카테고리별 점수 계산
+    SCORE_CATEGORIES.forEach((cat) => {
+      if (cat === 'Bonus') {
+        newPreviews[cat] = 0;
+      } else {
+        newPreviews[cat] = calculateScore(vals, cat);
+      }
+    });
+
+    return { 
+      currentDiceValues: vals,
+      previewScores: newPreviews 
+    };
+  }),
 
   diceInCup: [true, true, true, true, true],
   setDiceInCup: (diceInCup) => set((state) => {
@@ -132,4 +158,20 @@ export const useGameStore = create<GameState>((set) => ({
       .map(x => x.i);
     return { keptDiceSlots: newSlots, placementOrder: newOrder };
   }),
+  currentTurn: 'p1',
+  rollCount: 0,
+
+  endTurn: () => set((state) => ({
+    currentTurn: state.currentTurn === 'p1' ? 'p2' : 'p1',
+    rollCount: 0,
+    currentDiceValues: [1, 1, 1, 1, 1],
+    previewScores: {} as Record<RulesCategory, number>,
+    keptDiceSlots: [null, null, null, null, null],
+    diceInCup: [true, true, true, true, true],
+    allDiceCollected: true,
+    isInPlacementMode: false,
+    isReturningToCup: true,
+    placementOrder: [0, 1, 2, 3, 4],
+  })),
 }));
+
