@@ -19,7 +19,6 @@ export const SCORE_CATEGORIES: RulesCategory[] = [
 //4. 카테고리에 따른 점수 계산
 export function calculateScore(dice: number[], category: RulesCategory): number {
   if (dice.length !== 5) return 0;
-  
   const counts = new Array(7).fill(0);
   const sum = dice.reduce((acc, val) => {
     counts[val]++;
