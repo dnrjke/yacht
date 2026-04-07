@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Socket } from 'socket.io-client';
-import { GamePhase, RulesCategory, SCORE_CATEGORIES, checkBonus, calculateScore} from '@yacht/core';
+import { GamePhase, RulesCategory, SCORE_CATEGORIES, checkBonus, calculateScore, ComboResult, GAME_CONSTANTS } from '@yacht/core';
 
 interface GameState {
   socket: Socket | null;
@@ -30,10 +30,9 @@ interface GameState {
   //예상 점수 상태
   previewScores: Record<RulesCategory, number>;
 
-  // Dice-in-cup tracking
-  diceInCup: boolean[];
-  setDiceInCup: (val: boolean[]) => void;
-  allDiceCollected: boolean;
+  // Pour gate: true when all non-kept dice are in the cup
+  canPour: boolean;
+  setCanPour: (val: boolean) => void;
 
   // Placement mode: dice displayed in HUD after rolling
   isInPlacementMode: boolean;
@@ -52,9 +51,14 @@ interface GameState {
   keepDie: (dieIndex: number) => void;   // HUD → first empty tray slot
   unkeepDie: (dieIndex: number) => void; // tray → back to HUD row
 
+  // 콤보 연출
+  activeCombo: ComboResult | null;
+  setActiveCombo: (combo: ComboResult | null) => void;
+
   // 턴 관리 상태 추가
-  currentTurn: 'p1' | 'p2'; 
+  currentTurn: 'p1' | 'p2';
   rollCount: number;
+  incrementRollCount: () => void;
   endTurn: () => void; // 턴 종료 함수
 }
 
@@ -119,14 +123,8 @@ export const useGameStore = create<GameState>((set) => ({
     };
   }),
 
-  diceInCup: [true, true, true, true, true],
-  setDiceInCup: (diceInCup) => set((state) => {
-    // allDiceCollected only considers non-kept dice
-    const keptSet = new Set(state.keptDiceSlots.filter(s => s !== null));
-    const allCollected = diceInCup.every((inCup, i) => inCup || keptSet.has(i));
-    return { diceInCup, allDiceCollected: allCollected };
-  }),
-  allDiceCollected: true,
+  canPour: true,
+  setCanPour: (canPour) => set({ canPour }),
 
   isInPlacementMode: false,
   setIsInPlacementMode: (isInPlacementMode) => set({ isInPlacementMode }),
@@ -158,8 +156,14 @@ export const useGameStore = create<GameState>((set) => ({
       .map(x => x.i);
     return { keptDiceSlots: newSlots, placementOrder: newOrder };
   }),
+  activeCombo: null,
+  setActiveCombo: (activeCombo) => set({ activeCombo }),
+
   currentTurn: 'p1',
   rollCount: 0,
+  incrementRollCount: () => set((state) => ({
+    rollCount: Math.min(state.rollCount + 1, GAME_CONSTANTS.MAX_ROLLS_PER_TURN),
+  })),
 
   endTurn: () => set((state) => ({
     currentTurn: state.currentTurn === 'p1' ? 'p2' : 'p1',
@@ -167,11 +171,12 @@ export const useGameStore = create<GameState>((set) => ({
     currentDiceValues: [1, 1, 1, 1, 1],
     previewScores: {} as Record<RulesCategory, number>,
     keptDiceSlots: [null, null, null, null, null],
-    diceInCup: [true, true, true, true, true],
-    allDiceCollected: true,
+    canPour: true,
     isInPlacementMode: false,
     isReturningToCup: true,
+    isSyncingDice: true,
     placementOrder: [0, 1, 2, 3, 4],
+    activeCombo: null,
   })),
 }));
 

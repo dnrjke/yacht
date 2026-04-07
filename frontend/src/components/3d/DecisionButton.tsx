@@ -1,6 +1,7 @@
 import { useRef, useMemo, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useGameStore } from '../../store/gameStore';
+import { GAME_CONSTANTS } from '@yacht/core';
 import * as THREE from 'three';
 
 // Scratch vectors — reused every frame
@@ -9,7 +10,7 @@ const _right   = new THREE.Vector3();
 const _up      = new THREE.Vector3();
 const _center  = new THREE.Vector3();
 
-function createButtonTexture(hovered: boolean) {
+function createButtonTexture(hovered: boolean, remainingRolls: number) {
   const W = 320, H = 80;
   const canvas = document.createElement('canvas');
   canvas.width  = W;
@@ -28,25 +29,29 @@ function createButtonTexture(hovered: boolean) {
   ctx.font = 'bold 38px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('결  정', W / 2, H / 2);
+  ctx.fillText(`다시 굴리기 (${remainingRolls})`, W / 2, H / 2);
 
   return new THREE.CanvasTexture(canvas);
 }
 
 export function DecisionButton() {
   const isInPlacementMode = useGameStore(state => state.isInPlacementMode);
+  const rollCount = useGameStore(state => state.rollCount);
   const meshRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
 
+  const remainingRolls = GAME_CONSTANTS.MAX_ROLLS_PER_TURN - rollCount;
+  const canRollAgain = remainingRolls > 0;
+
   const material = useMemo(() => {
-    const tex = createButtonTexture(hovered);
+    const tex = createButtonTexture(hovered, remainingRolls);
     return new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
       depthTest: false,
       depthWrite: false,
     });
-  }, [hovered]);
+  }, [hovered, remainingRolls]);
 
   useFrame(({ camera }) => {
     if (!meshRef.current || !isInPlacementMode) return;
@@ -76,7 +81,7 @@ export function DecisionButton() {
     meshRef.current.quaternion.copy(cam.quaternion);
   });
 
-  if (!isInPlacementMode) return null;
+  if (!isInPlacementMode || !canRollAgain) return null;
 
   return (
     <mesh

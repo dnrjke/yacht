@@ -4,14 +4,14 @@ import { useGameStore } from '../../store/gameStore';
 import * as THREE from 'three';
 import { BOARD_CONSTANTS } from '@yacht/core';
 
-const { CUP_REST_Y } = BOARD_CONSTANTS;
+const { CUP_REST_X, CUP_REST_Y, CUP_REST_Z } = BOARD_CONSTANTS;
 
 export function PhysicsCup() {
   const cupRef = useRef<THREE.Group>(null);
   const isDragging = useRef(false);
   const isPouring = useRef(false);
   const socket = useGameStore(state => state.socket);
-  const allDiceCollected = useGameStore(state => state.allDiceCollected);
+  const canPour = useGameStore(state => state.canPour);
   const { camera, pointer } = useThree();
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -CUP_REST_Y);
 
@@ -25,7 +25,7 @@ export function PhysicsCup() {
         return;
       }
 
-      if (allDiceCollected) {
+      if (canPour) {
         socket.emit('POUR_CUP', {
           position: {
             x: cupRef.current.position.x,
@@ -45,7 +45,7 @@ export function PhysicsCup() {
     };
     window.addEventListener('pointerup', handleUp);
     return () => window.removeEventListener('pointerup', handleUp);
-  }, [socket, allDiceCollected]);
+  }, [socket, canPour]);
 
   // Listen for POUR_RESULT to play back cup trajectory
   useEffect(() => {
@@ -77,7 +77,7 @@ export function PhysicsCup() {
       } else {
         cupPlayback.current = null;
         isPouring.current = false;
-        cupRef.current.position.set(0, CUP_REST_Y, 0);
+        cupRef.current.position.set(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
         cupRef.current.quaternion.set(0, 0, 0, 1);
       }
       return;
@@ -104,9 +104,9 @@ export function PhysicsCup() {
   return (
     <group
       ref={cupRef}
-      position={[0, CUP_REST_Y, 0]}
+      position={[CUP_REST_X, CUP_REST_Y, CUP_REST_Z]}
       onPointerDown={(e) => {
-        if (isPouring.current) return;
+        if (isPouring.current || !canPour) return;
         e.stopPropagation();
         isDragging.current = true;
       }}

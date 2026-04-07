@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv \"C:/yacht/.claude/skills/approve\" \"C:/yacht/.claude/skills/yacht-approve\")",
+      "Bash(mv \"C:/yacht/.claude/skills/implement\" \"C:/yacht/.claude/skills/yacht-implement\")",
+      "WebSearch",
+      "Bash(npm run:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm view:*)",
+      "Bash(mkdir -p /tmp/rapier-check)",
+      "Read(//tmp/**)",
+      "Bash(npm init:*)",
+      "Bash(npm install:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:rapier.rs)",
+      "Bash(cp:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(git -C /c/yacht status --short)",
+      "Bash(git remote:*)",
+      "Bash(git fetch:*)",
+      "Bash(git checkout:*)"
+    ]
+  }
+}

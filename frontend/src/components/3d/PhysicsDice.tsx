@@ -1,7 +1,7 @@
 import { useRef, useEffect, useMemo } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import * as THREE from 'three';
-import { YACHT_CONSTANTS, BOARD_CONSTANTS } from '@yacht/core';
+import { YACHT_CONSTANTS, BOARD_CONSTANTS, detectCombo } from '@yacht/core';
 import { useFrame } from '@react-three/fiber';
 
 // Face normal in local die space for each value.
@@ -80,7 +80,7 @@ function createDiceTexture(value: number) {
 export function PhysicsDice() {
   const socket = useGameStore(state => state.socket);
   const setCurrentDiceValues = useGameStore(state => state.setCurrentDiceValues);
-  const setDiceInCup = useGameStore(state => state.setDiceInCup);
+  const isInPlacementMode = useGameStore(state => state.isInPlacementMode);
   const diceRefs = useRef<(THREE.Mesh | null)[]>([]);
   const playbackData = useRef<{ frames: any[]; currentFrame: number } | null>(null);
   const placementTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -100,6 +100,45 @@ export function PhysicsDice() {
   } | null>(null);
   const lastPlacementCount = useRef(5);
 
+  // ── DEBUG: track quaternion snaps ──
+  const prevQuats = useRef<THREE.Quaternion[]>(Array.from({ length: 5 }, () => new THREE.Quaternion()));
+  const debugReadFace = (q: THREE.Quaternion): number => {
+    const normals: [THREE.Vector3, number][] = [
+      [new THREE.Vector3(0, 1, 0), 1], [new THREE.Vector3(0, -1, 0), 6],
+      [new THREE.Vector3(1, 0, 0), 2], [new THREE.Vector3(-1, 0, 0), 5],
+      [new THREE.Vector3(0, 0, 1), 3], [new THREE.Vector3(0, 0, -1), 4],
+    ];
+    let best = 1, maxDot = -Infinity;
+    for (const [n, v] of normals) {
+      const rotN = n.clone().applyQuaternion(q);
+      const dot = rotN.y; // dot with UP
+      if (dot > maxDot) { maxDot = dot; best = v; }
+    }
+    return best;
+  };
+  const debugCheckSnap = (source: string) => {
+    for (let i = 0; i < diceRefs.current.length; i++) {
+      const mesh = diceRefs.current[i];
+      if (!mesh) continue;
+      const angle = prevQuats.current[i].angleTo(mesh.quaternion);
+      if (angle > 0.15) { // ~8.6° threshold
+        const oldFace = debugReadFace(prevQuats.current[i]);
+        const newFace = debugReadFace(mesh.quaternion);
+        const store = useGameStore.getState();
+        const faceChanged = oldFace !== newFace ? '⚠️ FACE CHANGED' : '';
+        console.log(
+          `[SNAP] die=${i} src=${source} angle=${(angle * 180 / Math.PI).toFixed(1)}° ` +
+          `face:${oldFace}→${newFace} ${faceChanged} ` +
+          `storedVal=${store.currentDiceValues[i]} ` +
+          `kept=${store.keptDiceSlots.includes(i)} ` +
+          `flags={plc=${store.isInPlacementMode},ret=${store.isReturningToCup},sync=${store.isSyncingDice},wait=${store.isWaitingForPlacement}}`
+        );
+      }
+      prevQuats.current[i].copy(mesh.quaternion);
+    }
+  };
+  // ── END DEBUG ──
+
   const diceMaterials = useMemo(() => [
     new THREE.MeshStandardMaterial({ map: createDiceTexture(2), roughness: 0.3 }),
     new THREE.MeshStandardMaterial({ map: createDiceTexture(5), roughness: 0.3 }),
@@ -112,21 +151,25 @@ export function PhysicsDice() {
   useEffect(() => {
     if (!socket) return;
 
-    const handleDiceUpdate = (data: { diceStates: any[]; diceInCup: boolean[] }) => {
+    const handleDiceUpdate = (data: { diceStates: any[] }) => {
       if (playbackData.current) return;
       if (useGameStore.getState().isInPlacementMode) return;
       if (useGameStore.getState().isWaitingForPlacement) return;
       if (useGameStore.getState().isReturningToCup) return;
       if (useGameStore.getState().isSyncingDice) return;
 
+      const keptSet = new Set(
+        useGameStore.getState().keptDiceSlots.filter((s): s is number => s !== null)
+      );
       data.diceStates.forEach((state, idx) => {
+        if (keptSet.has(idx)) return;
         const mesh = diceRefs.current[idx];
         if (mesh) {
           mesh.position.set(state.position.x, state.position.y, state.position.z);
           mesh.quaternion.set(state.quaternion.x, state.quaternion.y, state.quaternion.z, state.quaternion.w);
         }
       });
-      setDiceInCup(data.diceInCup);
+      debugCheckSnap('DICE_STATES');
     };
 
     const startPlayback = (frames: any[], finalValues: number[]) => {
@@ -142,34 +185,32 @@ export function PhysicsDice() {
       setCurrentDiceValues(finalValues);
     };
 
-    const handleRollResult = (r: { trajectory: any[]; finalValues: number[] }) =>
-      startPlayback(r.trajectory, r.finalValues);
-
-    const handlePourResult = (r: { diceTrajectory: any[]; finalValues: number[] }) =>
+    const handlePourResult = (r: { diceTrajectory: any[]; finalValues: number[] }) => {
       startPlayback(r.diceTrajectory, r.finalValues);
-
-    const handleRollPlayback = (r: { trajectory: any[]; finalValues: number[] }) =>
-      startPlayback(r.trajectory, r.finalValues);
+      useGameStore.getState().incrementRollCount();
+      useGameStore.getState().setCanPour(false);
+    };
 
     const handleCollectionDone = () => {
-      useGameStore.getState().setIsSyncingDice(false);
+      console.log('[DEBUG] COLLECTION_DONE received');
+      debugCheckSnap('pre-COLLECTION_DONE');
+      const s = useGameStore.getState();
+      s.setIsReturningToCup(false);
+      s.setIsSyncingDice(false);
+      s.setCanPour(true);
     };
 
     socket.on('DICE_STATES', handleDiceUpdate);
-    socket.on('ROLL_RESULT', handleRollResult);
     socket.on('POUR_RESULT', handlePourResult);
-    socket.on('ROLL_PLAYBACK', handleRollPlayback);
     socket.on('COLLECTION_DONE', handleCollectionDone);
 
     return () => {
       socket.off('DICE_STATES', handleDiceUpdate);
-      socket.off('ROLL_RESULT', handleRollResult);
       socket.off('POUR_RESULT', handlePourResult);
-      socket.off('ROLL_PLAYBACK', handleRollPlayback);
       socket.off('COLLECTION_DONE', handleCollectionDone);
       if (placementTimer.current) clearTimeout(placementTimer.current);
     };
-  }, [socket, setCurrentDiceValues, setDiceInCup]);
+  }, [socket, setCurrentDiceValues]);
 
   useFrame(({ camera, clock }) => {
     const store = useGameStore.getState();
@@ -281,7 +322,10 @@ export function PhysicsDice() {
     }
 
     // ── Exited placement mode: clear animation + reset scale ─────────────────
-    if (placementAnim.current) placementAnim.current = null;
+    if (placementAnim.current) {
+      debugCheckSnap('exit-placement');
+      placementAnim.current = null;
+    }
 
     // ── Return-to-cup animation (non-kept dice only) ────────────────────
     if (store.isReturningToCup) {
@@ -298,14 +342,16 @@ export function PhysicsDice() {
       const rawT = Math.min((clock.elapsedTime - returnAnim.current.startTime) / returnAnim.current.duration, 1);
       const t = easeOutCubic(rawT);
 
+      const cupX = BOARD_CONSTANTS.CUP_REST_X;
       const cupY = BOARD_CONSTANTS.CUP_REST_Y;
+      const cupZ = BOARD_CONSTANTS.CUP_REST_Z;
       const keptSet = new Set(store.keptDiceSlots.filter(s => s !== null));
       const cupOffsets = [
-        { x: -1.2, y: cupY - 2.5, z: -1.2 },
-        { x: 1.2, y: cupY - 2.5, z: -1.2 },
-        { x: -1.2, y: cupY - 2.5, z: 1.2 },
-        { x: 1.2, y: cupY - 2.5, z: 1.2 },
-        { x: 0.0, y: cupY - 0.5, z: 0.0 },
+        { x: cupX - 1.2, y: cupY - 2.5, z: cupZ - 1.2 },
+        { x: cupX + 1.2, y: cupY - 2.5, z: cupZ - 1.2 },
+        { x: cupX - 1.2, y: cupY - 2.5, z: cupZ + 1.2 },
+        { x: cupX + 1.2, y: cupY - 2.5, z: cupZ + 1.2 },
+        { x: cupX,       y: cupY - 0.5, z: cupZ       },
       ];
       let cupSlot = 0;
 
@@ -351,9 +397,13 @@ export function PhysicsDice() {
         mesh.scale.setScalar(startScale + (1 - startScale) * t);
       }
 
+      debugCheckSnap('returnAnim-frame');
+
       if (rawT >= 1) {
         returnAnim.current = null;
-        store.setIsReturningToCup(false);
+        console.log('[DEBUG] returnAnim complete, emitting COLLECT_TO_CUP');
+        debugCheckSnap('returnAnim-done');
+        // isReturningToCup is cleared in handleCollectionDone to keep the guard active
         const keptIndices = store.keptDiceSlots;
         const socket = store.socket;
         if (socket) {
@@ -384,6 +434,7 @@ export function PhysicsDice() {
         playbackData.current.currentFrame++;
       } else {
         // Playback finished — freeze positions and wait 1s before entering placement mode
+        debugCheckSnap('playback-done');
         playbackData.current = null;
         useGameStore.getState().setIsWaitingForPlacement(true);
         placementTimer.current = setTimeout(() => {
@@ -397,6 +448,7 @@ export function PhysicsDice() {
             .sort((a, b) => a.v !== b.v ? a.v - b.v : a.i - b.i)
             .map(x => x.i);
           s.setPlacementOrder(nonKeptValues);
+          s.setActiveCombo(detectCombo(s.currentDiceValues));
           s.setIsInPlacementMode(true);
         }, 400);
       }
@@ -412,17 +464,16 @@ export function PhysicsDice() {
           castShadow
           receiveShadow
           material={diceMaterials}
-          onPointerDown={(e) => {
-            const s = useGameStore.getState();
-            if (!s.isInPlacementMode) return;
+          onPointerDown={isInPlacementMode ? (e) => {
             e.stopPropagation();
+            const s = useGameStore.getState();
             const isKept = s.keptDiceSlots.includes(idx);
             if (isKept) {
               s.unkeepDie(idx);
             } else if (s.placementOrder.includes(idx)) {
               s.keepDie(idx);
             }
-          }}
+          } : undefined}
         >
           <boxGeometry args={[2, 2, 2]} />
         </mesh>

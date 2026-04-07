@@ -2,7 +2,7 @@
 export const YACHT_CONSTANTS = {
   DICE_COUNT: 5,
   SIDES: 6,
-};
+} as const;
 
 /**
  * Board geometry constants — single source of truth for frontend visuals,
@@ -16,6 +16,10 @@ export const YACHT_CONSTANTS = {
  *   - Camera Z position      (-(TRAY_DEPTH / 4))
  *   - Camera lookAt Z        (-(TRAY_DEPTH / 2 + WALL_THICKNESS / 2))
  */
+export const GAME_CONSTANTS = {
+  MAX_ROLLS_PER_TURN: 3,
+} as const;
+
 export const BOARD_CONSTANTS = {
   // Playing area (XZ dimensions)
   BOARD_SIZE: 16,
@@ -35,11 +39,20 @@ export const BOARD_CONSTANTS = {
   // so the containment volume is always above the camera's field of view.
   PHYSICS_WALL_HEIGHT: 200,
 
-  // Cup default resting position
-  CUP_REST_Y: 5,
+  // Cup default resting position (outside the board, to the right)
+  // CUP_REST_Y must be > PLAY_WALL_HEIGHT + 4.2 (cup visual bottom offset)
+  // so the cup clears the visual walls when dragged across the board.
+  // CUP_REST_X must be > BOARD_SIZE/2 + WALL_THICKNESS + cup_visual_radius(4.4) + gap
+  // so the cup doesn't visually overlap with the board wall.
+  CUP_REST_Y: 7,
+  CUP_REST_X: 15,
+  CUP_REST_Z: -3,
+
+  // Pour boundary — dice must land inside this margin from the wall
+  POUR_BOUNDARY_MARGIN: 2,
 } as const;
 
 export type GamePhase = 'LOBBY' | 'TOUCH_TO_START' | 'MAIN_MENU' | 'GAME' | 'GAME_OVER';
 
-export type { RulesCategory, ScoreBoard } from './scoring.js';
-export { SCORE_CATEGORIES, calculateScore, checkBonus, getUpperTotal } from './scoring.js';
+export type { RulesCategory, ScoreBoard, ComboResult } from './scoring.js';
+export { SCORE_CATEGORIES, calculateScore, checkBonus, getUpperTotal, detectCombo } from './scoring.js';

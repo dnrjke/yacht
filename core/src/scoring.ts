@@ -65,7 +65,48 @@ export function checkBonus(scoreBoard: ScoreBoard): number {
 }
 
 //최종 합계
-export function getTotalScore(scoreBoard: ScoreBoard): number { 
+export function getTotalScore(scoreBoard: ScoreBoard): number {
   const allCategories = Object.keys(scoreBoard) as RulesCategory[];
   return allCategories.reduce((acc, cat) => acc + (scoreBoard[cat] ?? 0), 0);
+}
+
+//7. 콤보 감지 — 주사위 5개로 현재 성립하는 최고 우선순위 콤보 반환
+export interface ComboResult {
+  name: string;
+  tier: 1 | 2;  // 1=일반, 2=특별(Yacht)
+}
+
+const COMBO_DISPLAY_NAMES: Record<string, string> = {
+  Yacht: 'YACHT',
+  LargeStraight: 'LARGE STRAIGHT',
+  FourOfAKind: 'FOUR OF A KIND',
+  FullHouse: 'FULL HOUSE',
+  SmallStraight: 'SMALL STRAIGHT',
+};
+
+export function detectCombo(dice: number[]): ComboResult | null {
+  if (dice.length !== 5) return null;
+
+  const counts = new Array(7).fill(0);
+  dice.forEach(v => counts[v]++);
+  const unique = [...new Set(dice)].sort().join('');
+
+  // 우선순위 순서대로 검사
+  if (counts.some(c => c === 5)) {
+    return { name: COMBO_DISPLAY_NAMES.Yacht, tier: 2 };
+  }
+  if (unique === '12345' || unique === '23456') {
+    return { name: COMBO_DISPLAY_NAMES.LargeStraight, tier: 1 };
+  }
+  if (counts.some(c => c >= 4)) {
+    return { name: COMBO_DISPLAY_NAMES.FourOfAKind, tier: 1 };
+  }
+  if ((counts.some(c => c === 3) && counts.some(c => c === 2))) {
+    return { name: COMBO_DISPLAY_NAMES.FullHouse, tier: 1 };
+  }
+  if (unique.includes('1234') || unique.includes('2345') || unique.includes('3456')) {
+    return { name: COMBO_DISPLAY_NAMES.SmallStraight, tier: 1 };
+  }
+
+  return null;
 }

@@ -4,6 +4,7 @@ import { PhysicsBoard } from './3d/PhysicsBoard';
 import { PhysicsCup } from './3d/PhysicsCup';
 import { PhysicsDice } from './3d/PhysicsDice';
 import { DecisionButton } from './3d/DecisionButton';
+import { ComboAnnouncement } from './3d/ComboAnnouncement';
 import { useState, useEffect } from 'react';
 import * as THREE from 'three';
 import { BOARD_CONSTANTS } from '@yacht/core';
@@ -13,13 +14,15 @@ const {
   WALL_THICKNESS,
   TRAY_DEPTH,
   PLAY_WALL_HEIGHT,
+  CUP_REST_X,
 } = BOARD_CONSTANTS;
 
-// Derived camera constants — automatically update when BOARD_CONSTANTS change:
-//   boardWidth / boardLength → how much XZ area the camera must cover
-//   cameraZ / lookAtZ        → slight Z offset to center board + tray in view
-//   PLAY_WALL_HEIGHT * 0.5   → camera lifts proportionally as walls grow taller
-const boardWidth  = BOARD_SIZE + WALL_THICKNESS * 2;                       // 18
+// Derived camera constants — asymmetric framing to include cup rest area
+const leftEdge   = -(BOARD_SIZE / 2 + WALL_THICKNESS);                     // -9
+const rightEdge  = CUP_REST_X + 5;                                         // 17
+const centerX    = (leftEdge + rightEdge) / 2;                              // 4
+const boardWidth = rightEdge - leftEdge;                                    // 26
+
 const boardLength = BOARD_SIZE + WALL_THICKNESS * 3 + TRAY_DEPTH;          // 23
 const cameraZ     = -(TRAY_DEPTH / 4);                                     // -1.0
 const lookAtZ     = -(TRAY_DEPTH / 2 + WALL_THICKNESS / 2);                // -2.5
@@ -45,8 +48,8 @@ function ResponsiveCameraManager() {
     // 벽이 높을수록 카메라를 약간 더 올려 전체 모습이 보이도록 조정합니다.
     const cameraY = requiredHeight + PLAY_WALL_HEIGHT * 0.5;
 
-    camera.position.set(0, cameraY, cameraZ);
-    camera.lookAt(0, 0, lookAtZ);
+    camera.position.set(centerX, cameraY, cameraZ);
+    camera.lookAt(centerX, 0, lookAtZ);
     camera.updateProjectionMatrix();
   }, [viewport.aspect, camera]);
 
@@ -58,7 +61,7 @@ export function GameScene() {
 
   return (
     <Canvas
-      camera={{ position: [0, BOARD_SIZE + PLAY_WALL_HEIGHT * 2 + 1, cameraZ], fov: 45 }}
+      camera={{ position: [centerX, BOARD_SIZE + PLAY_WALL_HEIGHT * 2 + 1, cameraZ], fov: 45 }}
       dpr={dpr}
       shadows
     >
@@ -83,10 +86,11 @@ export function GameScene() {
       <PhysicsCup />
       <PhysicsDice />
       <DecisionButton />
+      <ComboAnnouncement />
 
       <OrbitControls 
         makeDefault 
-        target={[0, 0, -2.5]} // 회전축 및 바라보는 중심점을 야추판(중심 0)과 주사위 보관함(-11) 사이로 보정
+        target={[centerX, 0, lookAtZ]}
         minDistance={10}
         maxDistance={60}
         minPolarAngle={0} 

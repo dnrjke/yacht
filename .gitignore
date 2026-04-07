@@ -126,5 +126,7 @@ dist-ssr/
 *.njsproj
 *.sln
 *.sw?
-.claude/
 *.zip
+
+# Reference files
+yacht연출 참고/
