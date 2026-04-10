@@ -11,6 +11,9 @@ export function PhysicsCup() {
   const isDragging = useRef(false);
   const isPouring = useRef(false);
   const socket = useGameStore(state => state.socket);
+  // Local 2P: canPour acts as the implicit turn guard.
+  // It is false during return-animation and server-sync phases,
+  // then set true by COLLECTION_DONE when the next player's turn begins.
   const canPour = useGameStore(state => state.canPour);
   const { camera, pointer } = useThree();
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -CUP_REST_Y);

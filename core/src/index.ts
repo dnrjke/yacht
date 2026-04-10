@@ -52,6 +52,23 @@ export const BOARD_CONSTANTS = {
   POUR_BOUNDARY_MARGIN: 2,
 } as const;
 
+// 컵 내부 주사위 5개 상대 위치 (컵 중심 기준)
+export const CUP_DICE_OFFSETS = [
+  { x: -1.2, y: -2.5, z: -1.2 },
+  { x:  1.2, y: -2.5, z: -1.2 },
+  { x: -1.2, y: -2.5, z:  1.2 },
+  { x:  1.2, y: -2.5, z:  1.2 },
+  { x:  0.0, y: -0.5, z:  0.0 },
+] as const;
+
+// 트레이 슬롯 월드 좌표 계산
+export function getTraySlotPosition(slotIdx: number): { x: number; y: number; z: number } {
+  const { TRAY_SLOT_COUNT, TRAY_SLOT_SPACING, BOARD_SIZE, WALL_THICKNESS, TRAY_DEPTH } = BOARD_CONSTANTS;
+  const trayStartX = -((TRAY_SLOT_COUNT - 1) * TRAY_SLOT_SPACING) / 2;
+  const trayCenterZ = -(BOARD_SIZE / 2 + WALL_THICKNESS + TRAY_DEPTH / 2);
+  return { x: trayStartX + slotIdx * TRAY_SLOT_SPACING, y: 1.0, z: trayCenterZ };
+}
+
 export type GamePhase = 'LOBBY' | 'TOUCH_TO_START' | 'MAIN_MENU' | 'GAME' | 'GAME_OVER';
 
 export type { RulesCategory, ScoreBoard, ComboResult } from './scoring.js';

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useMemo } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import * as THREE from 'three';
-import { YACHT_CONSTANTS, BOARD_CONSTANTS, detectCombo } from '@yacht/core';
+import { YACHT_CONSTANTS, BOARD_CONSTANTS, detectCombo, CUP_DICE_OFFSETS, getTraySlotPosition } from '@yacht/core';
 import { useFrame } from '@react-three/fiber';
 
 // Face normal in local die space for each value.
@@ -294,20 +294,13 @@ export function PhysicsDice() {
       }
 
       // ─ Kept dice: world-space tray slot positions ──────────────────────
-      const halfBoard = BOARD_CONSTANTS.BOARD_SIZE / 2;
-      const trayCenterZ = -(halfBoard + BOARD_CONSTANTS.WALL_THICKNESS + BOARD_CONSTANTS.TRAY_DEPTH / 2);
-      const trayStartX = -((BOARD_CONSTANTS.TRAY_SLOT_COUNT - 1) * BOARD_CONSTANTS.TRAY_SLOT_SPACING) / 2;
-
       store.keptDiceSlots.forEach((dieIdx, slotIdx) => {
         if (dieIdx === null) return;
         const mesh = diceRefs.current[dieIdx];
         if (!mesh) return;
 
-        _targetPos.set(
-          trayStartX + slotIdx * BOARD_CONSTANTS.TRAY_SLOT_SPACING,
-          1.0, // half-die sitting on tray surface (dice size 2 implies half height 1)
-          trayCenterZ
-        );
+        const trayPos = getTraySlotPosition(slotIdx);
+        _targetPos.set(trayPos.x, trayPos.y, trayPos.z);
         const value = store.currentDiceValues[dieIdx];
         const faceNormal = FACE_NORMALS[value] ?? FACE_NORMALS[1];
         _targetQuat.setFromUnitVectors(faceNormal, UP_VECTOR);
@@ -346,19 +339,7 @@ export function PhysicsDice() {
       const cupY = BOARD_CONSTANTS.CUP_REST_Y;
       const cupZ = BOARD_CONSTANTS.CUP_REST_Z;
       const keptSet = new Set(store.keptDiceSlots.filter(s => s !== null));
-      const cupOffsets = [
-        { x: cupX - 1.2, y: cupY - 2.5, z: cupZ - 1.2 },
-        { x: cupX + 1.2, y: cupY - 2.5, z: cupZ - 1.2 },
-        { x: cupX - 1.2, y: cupY - 2.5, z: cupZ + 1.2 },
-        { x: cupX + 1.2, y: cupY - 2.5, z: cupZ + 1.2 },
-        { x: cupX,       y: cupY - 0.5, z: cupZ       },
-      ];
       let cupSlot = 0;
-
-      // Tray positions for kept dice
-      const halfBoard = BOARD_CONSTANTS.BOARD_SIZE / 2;
-      const trayCenterZ = -(halfBoard + BOARD_CONSTANTS.WALL_THICKNESS + BOARD_CONSTANTS.TRAY_DEPTH / 2);
-      const trayStartX = -((BOARD_CONSTANTS.TRAY_SLOT_COUNT - 1) * BOARD_CONSTANTS.TRAY_SLOT_SPACING) / 2;
 
       for (let idx = 0; idx < diceRefs.current.length; idx++) {
         const mesh = diceRefs.current[idx];
@@ -368,11 +349,8 @@ export function PhysicsDice() {
           // Kept dice: stay at tray position (no animation needed, already placed)
           const slotIdx = store.keptDiceSlots.indexOf(idx);
           if (slotIdx >= 0) {
-            mesh.position.set(
-              trayStartX + slotIdx * BOARD_CONSTANTS.TRAY_SLOT_SPACING,
-              1.0,
-              trayCenterZ
-            );
+            const trayPos = getTraySlotPosition(slotIdx);
+            mesh.position.set(trayPos.x, trayPos.y, trayPos.z);
             const value = store.currentDiceValues[idx];
             const faceNormal = FACE_NORMALS[value] ?? FACE_NORMALS[1];
             _quat.setFromUnitVectors(faceNormal, UP_VECTOR);
@@ -383,9 +361,9 @@ export function PhysicsDice() {
         }
 
         // Non-kept dice: animate to cup
-        const off = cupOffsets[cupSlot % cupOffsets.length];
+        const off = CUP_DICE_OFFSETS[cupSlot % CUP_DICE_OFFSETS.length];
         cupSlot++;
-        _targetPos.set(off.x, off.y, off.z);
+        _targetPos.set(cupX + off.x, cupY + off.y, cupZ + off.z);
         mesh.position.lerpVectors(returnAnim.current.startPositions[idx], _targetPos, t);
 
         const val = store.currentDiceValues[idx];
@@ -403,7 +381,9 @@ export function PhysicsDice() {
         returnAnim.current = null;
         console.log('[DEBUG] returnAnim complete, emitting COLLECT_TO_CUP');
         debugCheckSnap('returnAnim-done');
-        // isReturningToCup is cleared in handleCollectionDone to keep the guard active
+        // Clear isReturningToCup to prevent re-entry on next frame.
+        // isSyncingDice remains true → DICE_STATES blocked until COLLECTION_DONE.
+        store.setIsReturningToCup(false);
         const keptIndices = store.keptDiceSlots;
         const socket = store.socket;
         if (socket) {

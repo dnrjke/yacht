@@ -10,7 +10,7 @@ export function MainMenuScreen() {
         onClick={() => setPhase('GAME')}
         style={{ padding: '15px 30px', fontSize: '1.2rem', margin: '10px', cursor: 'pointer', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '5px' }}
       >
-        Multiplayer
+        Local Play
       </button>
       <button 
         style={{ padding: '15px 30px', fontSize: '1.2rem', margin: '10px', cursor: 'pointer', background: '#666', color: 'white', border: 'none', borderRadius: '5px' }}

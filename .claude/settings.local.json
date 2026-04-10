@@ -19,7 +19,9 @@
       "Bash(git remote:*)",
       "Bash(git fetch:*)",
       "Bash(git checkout:*)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(node:*)",
+      "Skill(yacht-implement)"
     ]
   }
 }

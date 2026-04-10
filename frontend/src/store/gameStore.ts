@@ -168,10 +168,9 @@ export const useGameStore = create<GameState>((set) => ({
   endTurn: () => set((state) => ({
     currentTurn: state.currentTurn === 'p1' ? 'p2' : 'p1',
     rollCount: 0,
-    currentDiceValues: [1, 1, 1, 1, 1],
     previewScores: {} as Record<RulesCategory, number>,
     keptDiceSlots: [null, null, null, null, null],
-    canPour: true,
+    canPour: false,
     isInPlacementMode: false,
     isReturningToCup: true,
     isSyncingDice: true,

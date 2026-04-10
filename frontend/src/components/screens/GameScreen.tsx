@@ -5,6 +5,7 @@ import { Scoreboard } from '../ui/Scoreboard';
 export function GameScreen() {
   const isDebug = useGameStore((state) => state.isDebug);
   const currentDiceValues = useGameStore((state) => state.currentDiceValues);
+  const rollCount = useGameStore((state) => state.rollCount);
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%' }}>
@@ -15,8 +16,8 @@ export function GameScreen() {
         {/* 상단 주사위 숫자 미리보기 (HUD 대용) */}
         <div style={{ background: '#111', padding: '10px', borderRadius: '5px', marginBottom: '20px', display: 'flex', justifyContent: 'space-around' }}>
           {currentDiceValues.map((val, i) => (
-            <div key={i} style={{ width: '40px', height: '40px', background: 'white', color: 'black', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', fontWeight: 'bold', borderRadius: '5px' }}>
-              {val}
+            <div key={i} style={{ width: '40px', height: '40px', background: 'white', color: rollCount > 0 ? 'black' : '#555', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', fontWeight: 'bold', borderRadius: '5px' }}>
+              {rollCount > 0 ? val : '-'}
             </div>
           ))}
         </div>

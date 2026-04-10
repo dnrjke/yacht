@@ -2,9 +2,12 @@ import { useGameStore } from '../../store/gameStore';
 import { SCORE_CATEGORIES, RulesCategory } from '@yacht/core';
 
 export function Scoreboard() {
-  const { scores, previewScores, updateScore, currentTurn, endTurn } = useGameStore();
+  const { scores, previewScores, updateScore, currentTurn, endTurn, isInPlacementMode } = useGameStore();
 
   const handleScoreClick = (cat: RulesCategory) => {
+    // 0. 배치 모드(주사위 결과 확인 중)가 아니면 점수 기입 불가
+    if (!isInPlacementMode) return;
+
     // 1. 보너스 칸은 클릭해도 아무 일 안 일어남
     if (cat === 'Bonus') return;
 
@@ -49,8 +52,8 @@ export function Scoreboard() {
                 onClick={() => handleScoreClick(cat)}
                 style={{ 
                   borderBottom: '1px solid #333',
-                  // 이미 기록된 칸이 아닐 때만 손가락 커서 표시
-                  cursor: (currentTurn === 'p1' ? p1Val : p2Val) === null && cat !== 'Bonus' ? 'pointer' : 'default'
+                  // 배치 모드이고 미기록 칸일 때만 손가락 커서 표시
+                  cursor: isInPlacementMode && (currentTurn === 'p1' ? p1Val : p2Val) === null && cat !== 'Bonus' ? 'pointer' : 'default'
                 }}
               >
                 <td style={{ padding: '10px 5px', textAlign: 'left', fontSize: '14px', color: cat === 'Bonus' ? '#FFD700' : '#eee' }}>
@@ -59,12 +62,12 @@ export function Scoreboard() {
 
                 {/* P1 점수 영역 */}
                 <td style={{ color: p1Val !== null ? '#4CAF50' : '#666' }}>
-                  {p1Val !== null ? p1Val : (currentTurn === 'p1' && cat !== 'Bonus' ? preview : '-')}
+                  {p1Val !== null ? p1Val : (isInPlacementMode && currentTurn === 'p1' && cat !== 'Bonus' ? preview : '-')}
                 </td>
 
                 {/* P2 점수 영역 */}
                 <td style={{ color: p2Val !== null ? '#2196F3' : '#666' }}>
-                  {p2Val !== null ? p2Val : (currentTurn === 'p2' && cat !== 'Bonus' ? preview : '-')}
+                  {p2Val !== null ? p2Val : (isInPlacementMode && currentTurn === 'p2' && cat !== 'Bonus' ? preview : '-')}
                 </td>
               </tr>
             );

@@ -1,5 +1,5 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { YACHT_CONSTANTS, BOARD_CONSTANTS } from '@yacht/core';
+import { YACHT_CONSTANTS, BOARD_CONSTANTS, CUP_DICE_OFFSETS, getTraySlotPosition } from '@yacht/core';
 
 export interface PourResult {
   diceTrajectory: Array<Array<{ position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } }>>;
@@ -185,6 +185,7 @@ export class PhysicsWorld {
       const diceDesc = RAPIER.RigidBodyDesc.dynamic()
         .setTranslation(CUP_REST_X, CUP_REST_Y + i, CUP_REST_Z)
         .setCcdEnabled(true)
+        .setSoftCcdPrediction(2.0)  // predict 2 units ahead — dice full width for tunneling prevention
         .setCanSleep(true)
         .setLinearDamping(0.1)    // low damping — dice roll energetically after landing
         .setAngularDamping(0.2);  // allow natural tumbling, mild spin decay
@@ -229,7 +230,7 @@ export class PhysicsWorld {
       const segs = 16;
       const segAngle = (2 * Math.PI) / segs;
       const segArc = 2 * rMid * Math.tan(segAngle / 2);
-      const segThickness = 0.4;  // vertical thickness of each bowl piece
+      const segThickness = 1.0;  // vertical thickness — thicker to prevent dice tunneling
 
       for (let s = 0; s < segs; s++) {
         const angle = s * segAngle;
@@ -298,9 +299,11 @@ export class PhysicsWorld {
       this.world.createCollider(segCollider, this.cupBody);
     }
 
-    // Safety disc under the bowl — prevents tunneling through thin bowl segments
-    const safetyDiscCollider = RAPIER.ColliderDesc.cylinder(0.3, bowlOuterR)
-      .setTranslation(0, bowlBaseY - bowlDepth - 0.3, 0)
+    // Safety disc under the bowl — flush with thickened bowl bottom to eliminate trap gap
+    // Bowl center ring bottom ≈ bowlBaseY - bowlDepth - 0.5 (half of 1.0 thickness)
+    const safetyDiscHalfH = 0.2;
+    const safetyDiscCollider = RAPIER.ColliderDesc.cylinder(safetyDiscHalfH, bowlOuterR - 0.5)
+      .setTranslation(0, bowlBaseY - bowlDepth - 0.5 - safetyDiscHalfH, 0)
       .setFriction(0.5)
       .setRestitution(0.1);
     this.world.createCollider(safetyDiscCollider, this.cupBody);
@@ -324,16 +327,9 @@ export class PhysicsWorld {
 
   spawnDiceInCup(): void {
     const cupPos = this.cupBody.translation();
-    const offsets = [
-      { x: -1.2, y: -2.5, z: -1.2 },
-      { x: 1.2, y: -2.5, z: -1.2 },
-      { x: -1.2, y: -2.5, z: 1.2 },
-      { x: 1.2, y: -2.5, z: 1.2 },
-      { x: 0.0, y: -0.5, z: 0.0 },
-    ];
     this.diceBodies.forEach((dice, i) => {
       dice.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
-      const off = offsets[i];
+      const off = CUP_DICE_OFFSETS[i];
       dice.setTranslation({ x: cupPos.x + off.x, y: cupPos.y + off.y, z: cupPos.z + off.z }, true);
       dice.setLinvel({ x: 0, y: 0, z: 0 }, true);
       dice.setAngvel({ x: 0, y: 0, z: 0 }, true);
@@ -352,9 +348,6 @@ export class PhysicsWorld {
     this.diceInCup = this.diceBodies.map((_, i) => !keptSet.has(i));
 
     const cupPos = this.cupBody.translation();
-    const { TRAY_SLOT_COUNT, TRAY_SLOT_SPACING, BOARD_SIZE, WALL_THICKNESS, TRAY_DEPTH } = BOARD_CONSTANTS;
-    const trayStartX = -((TRAY_SLOT_COUNT - 1) * TRAY_SLOT_SPACING) / 2;
-    const trayCenterZ = -(BOARD_SIZE / 2 + WALL_THICKNESS + TRAY_DEPTH / 2);
 
     // 1. Position kept dice in tray slots
     keptIndices.forEach((dieIdx, slotIdx) => {
@@ -362,11 +355,8 @@ export class PhysicsWorld {
       const dice = this.diceBodies[dieIdx];
       if (!dice) return;
 
-      dice.setTranslation({
-        x: trayStartX + slotIdx * TRAY_SLOT_SPACING,
-        y: 1.0,
-        z: trayCenterZ,
-      }, true);
+      const trayPos = getTraySlotPosition(slotIdx);
+      dice.setTranslation(trayPos, true);
       dice.setLinvel({ x: 0, y: 0, z: 0 }, true);
       dice.setAngvel({ x: 0, y: 0, z: 0 }, true);
       this.snapRotationToValue(dice, this.currentDiceValues[dieIdx]);
@@ -375,19 +365,12 @@ export class PhysicsWorld {
     });
 
     // 2. Position non-kept dice inside cup
-    const cupOffsets = [
-      { x: -1.2, y: -2.5, z: -1.2 },
-      { x: 1.2, y: -2.5, z: -1.2 },
-      { x: -1.2, y: -2.5, z: 1.2 },
-      { x: 1.2, y: -2.5, z: 1.2 },
-      { x: 0.0, y: -0.5, z: 0.0 },
-    ];
     let cupSlot = 0;
     this.diceBodies.forEach((dice, i) => {
       if (!keptSet.has(i)) {
         dice.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
 
-        const off = cupOffsets[cupSlot % cupOffsets.length];
+        const off = CUP_DICE_OFFSETS[cupSlot % CUP_DICE_OFFSETS.length];
         dice.setTranslation({ x: cupPos.x + off.x, y: cupPos.y + off.y, z: cupPos.z + off.z }, true);
         dice.setLinvel({ x: 0, y: 0, z: 0 }, true);
         dice.setAngvel({ x: 0, y: 0, z: 0 }, true);
@@ -790,8 +773,8 @@ export class PhysicsWorld {
       recordFrame();
     }
 
-    // Re-enable cup colliders now that it's back at rest
-    this.setCupCollidersEnabled(true);
+    // Cup colliders stay disabled through settle phase to avoid
+    // interfering with dice that may bounce near the rest position.
 
     // ── Settle: wait for dice to stop ──
     const maxSettleFrames = 600;
@@ -830,6 +813,9 @@ export class PhysicsWorld {
     const finalValues = this.getFinalDiceValues();
     this.currentDiceValues = finalValues;
     this.diceInCup = [false, false, false, false, false];
+
+    // Re-enable cup colliders now that settle is complete
+    this.setCupCollidersEnabled(true);
 
     // Reset cup and lid to rest position, walls OFF for next shake
     this.cupBody.setNextKinematicTranslation({ x: CUP_REST_X, y: CUP_REST_Y, z: CUP_REST_Z });

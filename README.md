@@ -62,6 +62,12 @@ c:\yacht\
 │   ├── rapier-migration-plan.md   (cannon-es → Rapier 마이그레이션 계획)
 │   ├── cup-animation-redesign.md  (컵 붓기 애니메이션 개선 설계)
 │   ├── cup-phase0-position-change.md (컵 기본 위치 변경 계획)
+│   ├── debug-dice-snap-log.md     (주사위 스냅 디버그 로그)
+│   ├── git-overwrite-procedure.md (Git 덮어쓰기 절차)
+│   ├── p2-implementation-guide.md (2P 구현 가이드)
+│   ├── p2-issue-audit.md          (2P 이슈 감사)
+│   ├── p2-post-implementation.md  (2P 구현 후 점검)
+│   ├── refactor-local-2p-source-of-truth.md (로컬 2P 상태 관리 리팩터링)
 │   └── task.md                    (개발 작업 체크리스트)
 │
 └── node_modules/       (자동 설치 - 커밋 제외)
@@ -91,7 +97,7 @@ c:\yacht\
 ### 2. 붓기 단계 (Pouring Phase)
 - **명령**: 플레이어가 야추통 드래그를 중단하면 `POUR_CUP` 이벤트가 발생합니다.
 - **예측 연산 (Server-side Determinism)**:
-  1. 서버는 즉시 브로드캐스트를 멈추고 `simulatePour`를 실행합니다: 컵을 130° 기울이기(40프레임) → 수직 상승(20프레임) → 주사위 안정화 대기(최대 600프레임).
+  1. 서버는 즉시 브로드캐스트를 멈추고 `simulatePour`를 실행합니다: 컵을 130° 기울이기(35프레임) → 수직 상승(14프레임) → 복귀 호(40프레임) → 주사위 안정화 대기(최대 600프레임).
   2. 서버는 **컵 궤적 + 주사위별 궤적 + 최종 결과**(ex. 1, 3, 3, 4, 6)를 `POUR_RESULT`로 클라이언트에 보냅니다.
 - **재생 (Playback)**: 클라이언트(`PhysicsDice.tsx`)는 서버가 보낸 궤적 데이터를 마치 비디오를 틀듯이 화면에 그대로 재생합니다. 이미 미래(결과)가 결정된 애니메이션을 틀어주기 때문에 **네트워크 지연이 발생해도 결과가 100% 동일**하며 플레이어들은 매우 부드러운 3D 물리 효과를 감상할 수 있습니다.
 - **콤보 감지**: 재생 완료 후 `detectCombo()`가 족보를 판별하고, 야추(Yacht) 등 특수 조합이면 골든 셰이더 이펙트와 파티클로 `ComboAnnouncement`가 표시됩니다.
