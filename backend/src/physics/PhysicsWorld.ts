@@ -744,9 +744,15 @@ export class PhysicsWorld {
     }
 
     // ── Phase 3: Return arc — from pour position directly to rest ──
-    // Cup's pouring job is done — disable collision so it doesn't
-    // knock dice on the board while flying back to rest position.
+    // Rapier 0.18.x has a known issue where setEnabled(false) can have
+    // a one-frame delay — cached contacts from the previous step still
+    // generate impulses. To guarantee zero cup–dice collision during
+    // return, we BOTH disable colliders AND teleport the cup body
+    // off-stage (y=-200). The visual cup trajectory is computed
+    // mathematically and recorded directly into cupTrajectory.
     this.setCupCollidersEnabled(false);
+    this.cupBody.setNextKinematicTranslation({ x: 0, y: -200, z: 0 });
+    this.cupBody.setNextKinematicRotation(identityQuat);
 
     const returnStartPos: Vec3 = { ...prevPos };
     const returnStartQuat: Quat = { ...prevRot };
@@ -754,29 +760,26 @@ export class PhysicsWorld {
     for (let f = 0; f < RETURN_FRAMES; f++) {
       const t = easeInOut((f + 1) / RETURN_FRAMES);
 
-      const targetPos: Vec3 = {
+      const cupVisualPos: Vec3 = {
         x: returnStartPos.x + (restPos.x - returnStartPos.x) * t,
         y: returnStartPos.y + (restPos.y - returnStartPos.y) * t + 4 * RETURN_ARC_HEIGHT * t * (1 - t),
         z: returnStartPos.z + (restPos.z - returnStartPos.z) * t,
       };
 
-      const targetRot = normalize({
+      const cupVisualRot = normalize({
         x: returnStartQuat.x + (identityQuat.x - returnStartQuat.x) * t,
         y: returnStartQuat.y + (identityQuat.y - returnStartQuat.y) * t,
         z: returnStartQuat.z + (identityQuat.z - returnStartQuat.z) * t,
         w: returnStartQuat.w + (identityQuat.w - returnStartQuat.w) * t,
       });
 
-      stepWithCup(prevPos, prevRot, targetPos, targetRot);
-      prevPos = targetPos;
-      prevRot = targetRot;
-      recordFrame();
+      stepPhysics();
+      diceTrajectory.push(this.getDiceStates());
+      cupTrajectory.push({ position: cupVisualPos, quaternion: cupVisualRot });
     }
 
-    // Cup colliders stay disabled through settle phase to avoid
-    // interfering with dice that may bounce near the rest position.
-
     // ── Settle: wait for dice to stop ──
+    // Cup body remains parked at y=-200; visual trajectory shows rest position.
     const maxSettleFrames = 600;
     let calmFrames = 0;
     const requiredCalmFrames = 30;
@@ -784,7 +787,8 @@ export class PhysicsWorld {
 
     for (let f = 0; f < maxSettleFrames; f++) {
       stepPhysics();
-      recordFrame();
+      diceTrajectory.push(this.getDiceStates());
+      cupTrajectory.push({ position: { ...restPos }, quaternion: { ...identityQuat } });
 
       let allCalm = true;
       for (let i = 0; i < this.diceBodies.length; i++) {
