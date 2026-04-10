@@ -12,6 +12,7 @@
   "dependencies": {
     "@yacht/core": "*",
     "@react-three/drei": "^9.105.6",
+    "three-mesh-bvh": "^0.7.8",
     "@react-three/fiber": "^8.16.2",
     "lucide-react": "^0.378.0",
     "react": "^18.2.0",
