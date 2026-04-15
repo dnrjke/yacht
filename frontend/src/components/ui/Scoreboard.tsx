@@ -1,43 +1,38 @@
+import React from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { SCORE_CATEGORIES, RulesCategory } from '@yacht/core';
 
 export function Scoreboard() {
-  const { scores, previewScores, updateScore, currentTurn, endTurn, isInPlacementMode } = useGameStore();
+  const { scores, previewScores, updateScore, currentTurn, endTurn } = useGameStore();
+
+  // 1. 상단 항목 합계 계산 로직
+  const upperCats: RulesCategory[] = ['Aces', 'Deuces', 'Threes', 'Fours', 'Fives', 'Sixes'];
+  const p1Sub = upperCats.reduce((sum, c) => sum + (Number(scores.p1[c]) || 0), 0);
+  const p2Sub = upperCats.reduce((sum, c) => sum + (Number(scores.p2[c]) || 0), 0);
 
   const handleScoreClick = (cat: RulesCategory) => {
-    // 0. 배치 모드(주사위 결과 확인 중)가 아니면 점수 기입 불가
-    if (!isInPlacementMode) return;
-
-    // 1. 보너스 칸은 클릭해도 아무 일 안 일어남
     if (cat === 'Bonus') return;
 
-    // 2. 현재 턴(p1 또는 p2)인 사람의 점수판을 확인
     const currentPlayerScores = scores[currentTurn];
-
-    // 3. 이미 점수가 적혀있는 칸이면 클릭 무시
     if (currentPlayerScores[cat] !== null) return;
 
-    // 4. 현재 주사위로 계산된 예상 점수 가져오기
     const scoreToRecord = previewScores[cat] ?? 0;
-
-    // 5. 점수 기록 (p1/p2 구분 없이 currentTurn에 기록)
     updateScore(currentTurn, cat, scoreToRecord);
-
-    // 6. 턴 종료 및 교체 (이 함수가 실행되면 p1 <-> p2가 바뀝니다)
     endTurn();
   };
 
   return (
     <div style={{ padding: '10px', background: '#1a1a1a', borderRadius: '8px', color: '#fff' }}>
-      <h3 style={{ borderBottom: '1px solid #444', paddingBottom: '10px', color: '#4CAF50' }}>
+      <h3 style={{ borderBottom: '1px solid #444', paddingBottom: '10px', color: '#4CAF50', textAlign: 'center' }}>
         {currentTurn === 'p1' ? "내 차례 (P1)" : "상대방 차례 (P2)"}
       </h3>
+      
       <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center' }}>
         <thead>
-          <tr style={{ borderBottom: '2px solid #555', color: '#aaa' }}>
+          <tr style={{ borderBottom: '2px solid #555', color: '#aaa', fontSize: '14px' }}>
             <th style={{ padding: '8px', textAlign: 'left' }}>Category</th>
-            <th>P1</th>
-            <th>P2</th>
+            <th style={{ width: '60px' }}>P1</th>
+            <th style={{ width: '60px' }}>P2</th>
           </tr>
         </thead>
         <tbody>
@@ -46,33 +41,56 @@ export function Scoreboard() {
             const p2Val = scores.p2[cat];
             const preview = previewScores[cat];
 
-            return (
-              <tr 
-                key={cat} 
-                onClick={() => handleScoreClick(cat)}
-                style={{ 
-                  borderBottom: '1px solid #333',
-                  // 배치 모드이고 미기록 칸일 때만 손가락 커서 표시
-                  cursor: isInPlacementMode && (currentTurn === 'p1' ? p1Val : p2Val) === null && cat !== 'Bonus' ? 'pointer' : 'default'
-                }}
-              >
-                <td style={{ padding: '10px 5px', textAlign: 'left', fontSize: '14px', color: cat === 'Bonus' ? '#FFD700' : '#eee' }}>
-                  {cat}
-                </td>
-
-                {/* P1 점수 영역 */}
-                <td style={{ color: p1Val !== null ? '#4CAF50' : '#666' }}>
-                  {p1Val !== null ? p1Val : (isInPlacementMode && currentTurn === 'p1' && cat !== 'Bonus' ? preview : '-')}
-                </td>
-
-                {/* P2 점수 영역 */}
-                <td style={{ color: p2Val !== null ? '#2196F3' : '#666' }}>
-                  {p2Val !== null ? p2Val : (isInPlacementMode && currentTurn === 'p2' && cat !== 'Bonus' ? preview : '-')}
-                </td>
+            // Bonus 항목 바로 위에 Subtotal 행 삽입
+            const subtotalRow = cat === 'Bonus' && (
+              <tr key="subtotal-row" style={{ background: 'rgba(255,255,255,0.05)', fontSize: '12px' }}>
+                <td style={{ textAlign: 'left', padding: '5px 8px', color: '#888' }}>Subtotal</td>
+                <td style={{ color: p1Sub >= 63 ? '#4CAF50' : '#FFD700', fontWeight: 'bold'  }}>{p1Sub} / 63</td>
+                <td style={{ color: p2Sub >= 63 ? '#2196F3' : '#FFD700', fontWeight: 'bold' }}>{p2Sub} / 63</td>
               </tr>
+            );
+
+            return (
+              <React.Fragment key={cat}>
+                {subtotalRow}
+                <tr 
+                  onClick={() => handleScoreClick(cat)}
+                  style={{ 
+                    borderBottom: '1px solid #333',
+                    cursor: (currentTurn === 'p1' ? p1Val : p2Val) === null && cat !== 'Bonus' ? 'pointer' : 'default'
+                  }}
+                >
+                  <td style={{ padding: '10px 8px', textAlign: 'left', fontSize: '14px', color: cat === 'Bonus' ? '#FFD700' : '#eee' }}>
+                    {cat}
+                  </td>
+                  <td style={{ color: p1Val !== null ? '#4CAF50' : (currentTurn === 'p1' ? '#888' : '#444') }}>
+                    {p1Val !== null ? p1Val : (currentTurn === 'p1' ? preview : '-')}
+                  </td>
+                  <td style={{ color: p2Val !== null ? '#2196F3' : (currentTurn === 'p2' ? '#888' : '#444') }}>
+                    {p2Val !== null ? p2Val : (currentTurn === 'p2' ? preview : '-')}
+                  </td>
+                </tr>
+              </React.Fragment>
             );
           })}
         </tbody>
+        <tfoot>
+          <tr style={{ borderTop: '2px solid #555', background: 'rgba(255,255,255,0.1)' }}>
+            <td style={{ padding: '12px 8px', textAlign: 'left', fontWeight: 'bold', color: '#FFD700' }}>
+              TOTAL
+            </td>
+            
+            {/* P1 총합: 초기값 0을 명시하고 acc 타입을 number로 고정 */}
+            <td style={{ padding: '12px 5px', fontSize: '1.1rem', fontWeight: 'bold', color: '#4CAF50' }}>
+              {Object.values(scores.p1).reduce((acc: number, v) => acc + (Number(v) || 0), 0)}
+            </td>
+            
+            {/* P2 총합 */}
+            <td style={{ padding: '12px 5px', fontSize: '1.1rem', fontWeight: 'bold', color: '#2196F3' }}>
+              {Object.values(scores.p2).reduce((acc: number, v) => acc + (Number(v) || 0), 0)}
+            </td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
