@@ -1,19 +1,20 @@
 import { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useGameStore } from '../../store/gameStore';
+import { soundManager } from '../../utils/soundManager';
 import * as THREE from 'three';
 import { BOARD_CONSTANTS } from '@yacht/core';
 
 const { CUP_REST_X, CUP_REST_Y, CUP_REST_Z } = BOARD_CONSTANTS;
 
+const POURING_DELAY_MS = 1000;
+
 export function PhysicsCup() {
   const cupRef = useRef<THREE.Group>(null);
   const isDragging = useRef(false);
   const isPouring = useRef(false);
+  const prevCupPos = useRef(new THREE.Vector3());
   const socket = useGameStore(state => state.socket);
-  // Local 2P: canPour acts as the implicit turn guard.
-  // It is false during return-animation and server-sync phases,
-  // then set true by COLLECTION_DONE when the next player's turn begins.
   const canPour = useGameStore(state => state.canPour);
   const { camera, pointer } = useThree();
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -CUP_REST_Y);
@@ -23,6 +24,8 @@ export function PhysicsCup() {
 
   useEffect(() => {
     const handleUp = () => {
+      soundManager.stopLoop('rolling_dice', 500);
+
       if (!isDragging.current || !cupRef.current || !socket) {
         isDragging.current = false;
         return;
@@ -42,6 +45,7 @@ export function PhysicsCup() {
             w: cupRef.current.quaternion.w
           }
         });
+        soundManager.play('pouring_dice', { delay: POURING_DELAY_MS });
       }
 
       isDragging.current = false;
@@ -97,6 +101,11 @@ export function PhysicsCup() {
     if (target) {
       cupRef.current.position.lerp(target, 0.2);
 
+      const speed = cupRef.current.position.distanceTo(prevCupPos.current);
+      prevCupPos.current.copy(cupRef.current.position);
+      const volume = Math.min(speed / 0.8, 1);
+      soundManager.setLoopVolume('rolling_dice', volume);
+
       socket.emit('CUP_TRANSFORM', {
         position: { x: cupRef.current.position.x, y: cupRef.current.position.y, z: cupRef.current.position.z },
         quaternion: { x: cupRef.current.quaternion.x, y: cupRef.current.quaternion.y, z: cupRef.current.quaternion.z, w: cupRef.current.quaternion.w }
@@ -112,6 +121,8 @@ export function PhysicsCup() {
         if (isPouring.current || !canPour) return;
         e.stopPropagation();
         isDragging.current = true;
+        if (cupRef.current) prevCupPos.current.copy(cupRef.current.position);
+        soundManager.startLoop('rolling_dice', 0);
       }}
       onPointerOver={() => document.body.style.cursor = 'grab'}
       onPointerOut={() => document.body.style.cursor = 'auto'}

@@ -1,8 +1,10 @@
 import { useGameStore } from '../../store/gameStore';
 import { GAME_CONSTANTS } from '@yacht/core';
+import { useI18n } from '../../utils/useI18n';
 
 export function TurnIndicator() {
   const rollCount = useGameStore((s) => s.rollCount);
+  const { t } = useI18n();
 
   return (
     <div style={{
@@ -18,7 +20,7 @@ export function TurnIndicator() {
       zIndex: 10,
       border: '1px solid #444',
     }}>
-      굴림 {rollCount} / {GAME_CONSTANTS.MAX_ROLLS_PER_TURN}
+      {t('rollPrefix')} {rollCount} / {GAME_CONSTANTS.MAX_ROLLS_PER_TURN}
     </div>
   );
 }

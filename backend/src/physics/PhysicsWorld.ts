@@ -828,6 +828,9 @@ export class PhysicsWorld {
     this.cupLidBody.setNextKinematicRotation({ x: 0, y: 0, z: 0, w: 1 });
     this.setBorderWallsEnabled(false);
 
+    this.pendingCupPos = null;
+    this.pendingCupQuat = null;
+
     return { diceTrajectory, cupTrajectory, finalValues };
   }
 

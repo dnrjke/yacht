@@ -59,7 +59,8 @@ interface GameState {
   currentTurn: 'p1' | 'p2';
   rollCount: number;
   incrementRollCount: () => void;
-  endTurn: () => void; // 턴 종료 함수
+  endTurn: () => void;
+  resetGame: () => void;
 }
 
 const initialScores = SCORE_CATEGORIES.reduce((acc, cat) => {
@@ -177,5 +178,21 @@ export const useGameStore = create<GameState>((set) => ({
     placementOrder: [0, 1, 2, 3, 4],
     activeCombo: null,
   })),
+
+  resetGame: () => set({
+    scores: { p1: { ...initialScores, Bonus: 0 }, p2: { ...initialScores, Bonus: 0 } },
+    currentTurn: 'p1',
+    rollCount: 0,
+    currentDiceValues: [1, 1, 1, 1, 1],
+    previewScores: {} as Record<RulesCategory, number>,
+    keptDiceSlots: [null, null, null, null, null],
+    canPour: false,
+    isInPlacementMode: false,
+    isWaitingForPlacement: false,
+    isReturningToCup: false,
+    isSyncingDice: false,
+    placementOrder: [0, 1, 2, 3, 4],
+    activeCombo: null,
+  }),
 }));
 

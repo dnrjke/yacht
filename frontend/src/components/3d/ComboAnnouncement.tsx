@@ -2,6 +2,7 @@ import { useEffect, useRef, useMemo, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html, Sparkles } from '@react-three/drei';
 import { useGameStore } from '../../store/gameStore';
+import { soundManager } from '../../utils/soundManager';
 import * as THREE from 'three';
 
 const COMBO_DISPLAY_DURATION = 1800;
@@ -229,10 +230,14 @@ export function ComboAnnouncement() {
       return;
     }
 
-    // Clear any pending timer
+    if (activeCombo.tier === 2) {
+      soundManager.play('yacht');
+    } else {
+      soundManager.play('make');
+    }
+
     if (timerRef.current) clearTimeout(timerRef.current);
 
-    // Remove fade-out class on new combo
     if (fadeRef.current) fadeRef.current.classList.remove('fade-out');
     setIsFading(false);
 

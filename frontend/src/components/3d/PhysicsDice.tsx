@@ -2,6 +2,7 @@ import { useRef, useEffect, useMemo } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import * as THREE from 'three';
 import { YACHT_CONSTANTS, BOARD_CONSTANTS, detectCombo, CUP_DICE_OFFSETS, getTraySlotPosition } from '@yacht/core';
+import { soundManager } from '../../utils/soundManager';
 import { useFrame } from '@react-three/fiber';
 
 // Face normal in local die space for each value.
@@ -437,10 +438,17 @@ export function PhysicsDice() {
 
   return (
     <>
-      {Array.from({ length: YACHT_CONSTANTS.DICE_COUNT }).map((_, idx) => (
+      {Array.from({ length: YACHT_CONSTANTS.DICE_COUNT }).map((_, idx) => {
+        const off = CUP_DICE_OFFSETS[idx];
+        return (
         <mesh
           key={idx}
           ref={el => { diceRefs.current[idx] = el; }}
+          position={[
+            BOARD_CONSTANTS.CUP_REST_X + off.x,
+            BOARD_CONSTANTS.CUP_REST_Y + off.y,
+            BOARD_CONSTANTS.CUP_REST_Z + off.z,
+          ]}
           castShadow
           receiveShadow
           material={diceMaterials}
@@ -450,14 +458,17 @@ export function PhysicsDice() {
             const isKept = s.keptDiceSlots.includes(idx);
             if (isKept) {
               s.unkeepDie(idx);
+              soundManager.play('tap_smooth');
             } else if (s.placementOrder.includes(idx)) {
               s.keepDie(idx);
+              soundManager.play('tap');
             }
           } : undefined}
         >
           <boxGeometry args={[2, 2, 2]} />
         </mesh>
-      ))}
+        );
+      })}
     </>
   );
 }

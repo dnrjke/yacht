@@ -22,7 +22,11 @@
       "Bash(npm ls:*)",
       "Bash(node:*)",
       "Skill(yacht-implement)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "PowerShell(New-Item *)",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(Copy-Item *)",
+      "PowerShell(git *)"
     ]
   }
 }

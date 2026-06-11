@@ -69,7 +69,7 @@ export function getTraySlotPosition(slotIdx: number): { x: number; y: number; z:
   return { x: trayStartX + slotIdx * TRAY_SLOT_SPACING, y: 1.0, z: trayCenterZ };
 }
 
-export type GamePhase = 'LOBBY' | 'TOUCH_TO_START' | 'MAIN_MENU' | 'GAME' | 'GAME_OVER';
+export type GamePhase = 'LOBBY' | 'MAIN_MENU' | 'GAME' | 'GAME_OVER';
 
 export type { RulesCategory, ScoreBoard, ComboResult } from './scoring.js';
-export { SCORE_CATEGORIES, calculateScore, checkBonus, getUpperTotal, detectCombo } from './scoring.js';
+export { SCORE_CATEGORIES, calculateScore, checkBonus, getUpperTotal, getTotalScore, detectCombo } from './scoring.js';

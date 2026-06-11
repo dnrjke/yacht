@@ -63,7 +63,6 @@ async function main() {
     socket.on('COLLECT_TO_CUP', (data?: { keptIndices?: (number | null)[] }) => {
       const keptIndices = data?.keptIndices ?? [];
       gamePhysics.spawnNonKeptDiceInCup(keptIndices);
-      // Tell all clients that collection is done so they can resume syncing physics states
       io.emit('COLLECTION_DONE');
     });
 

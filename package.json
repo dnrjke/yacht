@@ -6,6 +6,10 @@
     "backend",
     "core"
   ],
+  "scripts": {
+    "build:server": "npm run build --workspace=core && npm run build --workspace=backend",
+    "start:server": "npm run start --workspace=backend"
+  },
   "overrides": {
     "three-mesh-bvh": "^0.8.0"
   }

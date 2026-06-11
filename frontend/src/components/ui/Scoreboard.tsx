@@ -1,43 +1,90 @@
+import React from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { SCORE_CATEGORIES, RulesCategory } from '@yacht/core';
+import { soundManager } from '../../utils/soundManager';
+import { useI18n } from '../../utils/useI18n';
 
-export function Scoreboard() {
-  const { scores, previewScores, updateScore, currentTurn, endTurn, isInPlacementMode } = useGameStore();
+type ScoreboardProps = {
+  uiScale?: number;
+  compact?: boolean;
+  supernarrow?: boolean;
+};
+
+const TITLE_MIN_PX = 13;
+const BODY_MIN_PX = 10;
+const SECONDARY_MIN_PX = 9;
+
+const COMPACT_TITLE_MIN_PX = 11;
+const COMPACT_BODY_MIN_PX = 9;
+const COMPACT_SECONDARY_MIN_PX = 8;
+
+export function Scoreboard({ uiScale = 1, compact = false, supernarrow: _supernarrow = false }: ScoreboardProps) {
+  const { scores, previewScores, updateScore, currentTurn, endTurn, isInPlacementMode, setPhase } = useGameStore();
+  const { t } = useI18n();
+
+  const upperCats: RulesCategory[] = ['Aces', 'Deuces', 'Threes', 'Fours', 'Fives', 'Sixes'];
+  const p1Sub = upperCats.reduce((sum, c) => sum + (Number(scores.p1[c]) || 0), 0);
+  const p2Sub = upperCats.reduce((sum, c) => sum + (Number(scores.p2[c]) || 0), 0);
+
+  const scorableCategories = SCORE_CATEGORIES.filter(c => c !== 'Bonus');
 
   const handleScoreClick = (cat: RulesCategory) => {
-    // 0. 배치 모드(주사위 결과 확인 중)가 아니면 점수 기입 불가
     if (!isInPlacementMode) return;
-
-    // 1. 보너스 칸은 클릭해도 아무 일 안 일어남
     if (cat === 'Bonus') return;
 
-    // 2. 현재 턴(p1 또는 p2)인 사람의 점수판을 확인
     const currentPlayerScores = scores[currentTurn];
-
-    // 3. 이미 점수가 적혀있는 칸이면 클릭 무시
     if (currentPlayerScores[cat] !== null) return;
 
-    // 4. 현재 주사위로 계산된 예상 점수 가져오기
     const scoreToRecord = previewScores[cat] ?? 0;
-
-    // 5. 점수 기록 (p1/p2 구분 없이 currentTurn에 기록)
     updateScore(currentTurn, cat, scoreToRecord);
+    soundManager.play('score');
 
-    // 6. 턴 종료 및 교체 (이 함수가 실행되면 p1 <-> p2가 바뀝니다)
-    endTurn();
+    const updatedCurrent = { ...scores[currentTurn], [cat]: scoreToRecord };
+    const otherPlayer = currentTurn === 'p1' ? 'p2' : 'p1';
+    const currentDone = scorableCategories.every(c => updatedCurrent[c] !== null);
+    const otherDone = scorableCategories.every(c => scores[otherPlayer][c] !== null);
+
+    if (currentDone && otherDone) {
+      setPhase('GAME_OVER');
+    } else {
+      endTurn();
+    }
   };
 
+  const titleMin = compact ? COMPACT_TITLE_MIN_PX : TITLE_MIN_PX;
+  const bodyMin = compact ? COMPACT_BODY_MIN_PX : BODY_MIN_PX;
+  const secondaryMin = compact ? COMPACT_SECONDARY_MIN_PX : SECONDARY_MIN_PX;
+
+  const fontScale = uiScale < 1 ? Math.max(uiScale, 0.78) : uiScale;
+  const scaledPx = (value: number, min = 0) => `${Math.max(min, Math.round(value * uiScale))}px`;
+  const borderPx = (value: number) => `${Math.max(1, Math.round(value * uiScale))}px`;
+  const fontPx = (value: number, min: number) => `${Math.max(min, Math.round(value * fontScale))}px`;
+  const titleFontPx = (value: number) => fontPx(value, titleMin);
+  const bodyFontPx = (value: number) => fontPx(value, bodyMin);
+  const secondaryFontPx = (value: number) => fontPx(value, secondaryMin);
+
+  const pad = compact ? 4 : 10;
+  const cellPadV = compact ? 3 : 10;
+  const cellPadH = compact ? 4 : 8;
+  const turnLabel = currentTurn === 'p1' ? t('myTurn') : (compact ? t('opponentShort') : t('opponentTurn'));
+  const turnColor = currentTurn === 'p1' ? '#4CAF50' : '#2196F3';
+
   return (
-    <div style={{ padding: '10px', background: '#1a1a1a', borderRadius: '8px', color: '#fff' }}>
-      <h3 style={{ borderBottom: '1px solid #444', paddingBottom: '10px', color: '#4CAF50' }}>
-        {currentTurn === 'p1' ? "내 차례 (P1)" : "상대방 차례 (P2)"}
-      </h3>
-      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center' }}>
+    <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: scaledPx(pad), background: '#1a1a1a', borderRadius: scaledPx(compact ? 4 : 8), color: '#fff', fontSize: bodyFontPx(14) }}>
+      {!compact && (
+        <h3 style={{ borderBottom: `${borderPx(1)} solid #444`, paddingBottom: scaledPx(10), margin: `${scaledPx(14)} 0 ${scaledPx(16)}`, color: turnColor, textAlign: 'center', fontSize: titleFontPx(18), lineHeight: 1.2 }}>
+          {turnLabel}
+        </h3>
+      )}
+
+      <table style={{ width: '100%', flex: 1, minHeight: 0, borderCollapse: 'collapse', tableLayout: 'fixed', textAlign: 'center' }}>
         <thead>
-          <tr style={{ borderBottom: '2px solid #555', color: '#aaa' }}>
-            <th style={{ padding: '8px', textAlign: 'left' }}>Category</th>
-            <th>P1</th>
-            <th>P2</th>
+          <tr style={{ borderBottom: `${borderPx(2)} solid #555`, color: '#aaa', fontSize: bodyFontPx(14) }}>
+            <th style={{ padding: scaledPx(compact ? 4 : 8), textAlign: 'left', ...(compact ? { color: turnColor, fontSize: titleFontPx(14) } : {}) }}>
+              {compact ? turnLabel : 'Category'}
+            </th>
+            <th style={{ width: scaledPx(60, 40) }}>P1</th>
+            <th style={{ width: scaledPx(60, 40) }}>P2</th>
           </tr>
         </thead>
         <tbody>
@@ -46,33 +93,51 @@ export function Scoreboard() {
             const p2Val = scores.p2[cat];
             const preview = previewScores[cat];
 
-            return (
-              <tr 
-                key={cat} 
-                onClick={() => handleScoreClick(cat)}
-                style={{ 
-                  borderBottom: '1px solid #333',
-                  // 배치 모드이고 미기록 칸일 때만 손가락 커서 표시
-                  cursor: isInPlacementMode && (currentTurn === 'p1' ? p1Val : p2Val) === null && cat !== 'Bonus' ? 'pointer' : 'default'
-                }}
-              >
-                <td style={{ padding: '10px 5px', textAlign: 'left', fontSize: '14px', color: cat === 'Bonus' ? '#FFD700' : '#eee' }}>
-                  {cat}
-                </td>
-
-                {/* P1 점수 영역 */}
-                <td style={{ color: p1Val !== null ? '#4CAF50' : '#666' }}>
-                  {p1Val !== null ? p1Val : (isInPlacementMode && currentTurn === 'p1' && cat !== 'Bonus' ? preview : '-')}
-                </td>
-
-                {/* P2 점수 영역 */}
-                <td style={{ color: p2Val !== null ? '#2196F3' : '#666' }}>
-                  {p2Val !== null ? p2Val : (isInPlacementMode && currentTurn === 'p2' && cat !== 'Bonus' ? preview : '-')}
-                </td>
+            const subtotalRow = cat === 'Bonus' && (
+              <tr key="subtotal-row" style={{ background: 'rgba(255,255,255,0.05)', fontSize: secondaryFontPx(12) }}>
+                <td style={{ textAlign: 'left', padding: `${scaledPx(compact ? 2 : 5)} ${scaledPx(cellPadH)}`, color: '#888' }}>Subtotal</td>
+                <td style={{ color: p1Sub >= 63 ? '#4CAF50' : '#FFD700', fontWeight: 'bold'  }}>{p1Sub} / 63</td>
+                <td style={{ color: p2Sub >= 63 ? '#2196F3' : '#FFD700', fontWeight: 'bold' }}>{p2Sub} / 63</td>
               </tr>
+            );
+
+            return (
+              <React.Fragment key={cat}>
+                {subtotalRow}
+                <tr
+                  onClick={() => handleScoreClick(cat)}
+                  style={{
+                    borderBottom: `${borderPx(1)} solid #333`,
+                    cursor: isInPlacementMode && (currentTurn === 'p1' ? p1Val : p2Val) === null && cat !== 'Bonus' ? 'pointer' : 'default'
+                  }}
+                >
+                  <td style={{ padding: `${scaledPx(cellPadV)} ${scaledPx(cellPadH)}`, textAlign: 'left', fontSize: bodyFontPx(14), lineHeight: 1.1, color: cat === 'Bonus' ? '#FFD700' : '#eee', whiteSpace: 'nowrap' }}>
+                    {cat}
+                  </td>
+                  <td style={{ color: p1Val !== null ? '#4CAF50' : (currentTurn === 'p1' ? '#888' : '#444') }}>
+                    {p1Val !== null ? p1Val : (isInPlacementMode && currentTurn === 'p1' && cat !== 'Bonus' ? preview : '-')}
+                  </td>
+                  <td style={{ color: p2Val !== null ? '#2196F3' : (currentTurn === 'p2' ? '#888' : '#444') }}>
+                    {p2Val !== null ? p2Val : (isInPlacementMode && currentTurn === 'p2' && cat !== 'Bonus' ? preview : '-')}
+                  </td>
+                </tr>
+              </React.Fragment>
             );
           })}
         </tbody>
+        <tfoot>
+          <tr style={{ borderTop: `${borderPx(2)} solid #555`, background: 'rgba(255,255,255,0.1)' }}>
+            <td style={{ padding: `${scaledPx(compact ? 4 : 12)} ${scaledPx(cellPadH)}`, textAlign: 'left', fontWeight: 'bold', color: '#FFD700' }}>
+              TOTAL
+            </td>
+            <td style={{ padding: `${scaledPx(compact ? 4 : 12)} ${scaledPx(compact ? 3 : 5)}`, fontSize: titleFontPx(15.4), fontWeight: 'bold', color: '#4CAF50' }}>
+              {Object.values(scores.p1).reduce((acc: number, v) => acc + (Number(v) || 0), 0)}
+            </td>
+            <td style={{ padding: `${scaledPx(compact ? 4 : 12)} ${scaledPx(compact ? 3 : 5)}`, fontSize: titleFontPx(15.4), fontWeight: 'bold', color: '#2196F3' }}>
+              {Object.values(scores.p2).reduce((acc: number, v) => acc + (Number(v) || 0), 0)}
+            </td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );

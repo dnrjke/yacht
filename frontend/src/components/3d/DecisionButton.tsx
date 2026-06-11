@@ -2,6 +2,8 @@ import { useRef, useMemo, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useGameStore } from '../../store/gameStore';
 import { GAME_CONSTANTS } from '@yacht/core';
+import { soundManager } from '../../utils/soundManager';
+import { useI18n } from '../../utils/useI18n';
 import * as THREE from 'three';
 
 // Scratch vectors — reused every frame
@@ -10,26 +12,26 @@ const _right   = new THREE.Vector3();
 const _up      = new THREE.Vector3();
 const _center  = new THREE.Vector3();
 
-function createButtonTexture(hovered: boolean, remainingRolls: number) {
+function createButtonTexture(hovered: boolean, remainingRolls: number, disabled: boolean, rerollLabel: string) {
   const W = 320, H = 80;
   const canvas = document.createElement('canvas');
   canvas.width  = W;
   canvas.height = H;
   const ctx = canvas.getContext('2d')!;
 
-  const bg = hovered ? '#3a6a3a' : '#1e4a1e';
+  const bg = disabled ? '#2a2a2a' : hovered ? '#3a6a3a' : '#1e4a1e';
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  ctx.strokeStyle = hovered ? '#88dd88' : '#4a8a4a';
+  ctx.strokeStyle = disabled ? '#444' : hovered ? '#88dd88' : '#4a8a4a';
   ctx.lineWidth = 3;
   ctx.strokeRect(2, 2, W - 4, H - 4);
 
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = disabled ? '#666' : '#ffffff';
   ctx.font = 'bold 38px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`다시 굴리기 (${remainingRolls})`, W / 2, H / 2);
+  ctx.fillText(`${rerollLabel} (${remainingRolls})`, W / 2, H / 2);
 
   return new THREE.CanvasTexture(canvas);
 }
@@ -37,21 +39,26 @@ function createButtonTexture(hovered: boolean, remainingRolls: number) {
 export function DecisionButton() {
   const isInPlacementMode = useGameStore(state => state.isInPlacementMode);
   const rollCount = useGameStore(state => state.rollCount);
+  const placementOrder = useGameStore(state => state.placementOrder);
   const meshRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
+  const { t } = useI18n();
 
   const remainingRolls = GAME_CONSTANTS.MAX_ROLLS_PER_TURN - rollCount;
   const canRollAgain = remainingRolls > 0;
+  const allKept = placementOrder.length === 0;
+  const disabled = allKept || !canRollAgain;
 
+  const rerollLabel = t('reroll');
   const material = useMemo(() => {
-    const tex = createButtonTexture(hovered, remainingRolls);
+    const tex = createButtonTexture(disabled ? false : hovered, remainingRolls, disabled, rerollLabel);
     return new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
       depthTest: false,
       depthWrite: false,
     });
-  }, [hovered, remainingRolls]);
+  }, [hovered, remainingRolls, disabled, rerollLabel]);
 
   useFrame(({ camera }) => {
     if (!meshRef.current || !isInPlacementMode) return;
@@ -81,7 +88,7 @@ export function DecisionButton() {
     meshRef.current.quaternion.copy(cam.quaternion);
   });
 
-  if (!isInPlacementMode || !canRollAgain) return null;
+  if (!isInPlacementMode) return null;
 
   return (
     <mesh
@@ -90,24 +97,26 @@ export function DecisionButton() {
       material={material}
       onPointerDown={(e) => {
         e.stopPropagation();
+        if (disabled) return;
+        soundManager.play('reroll');
         const store = useGameStore.getState();
         store.setIsInPlacementMode(false);
         store.setIsSyncingDice(true);
 
         if (store.placementOrder.length > 0) {
-          // There are non-kept dice → animate them back to cup
           store.setIsReturningToCup(true);
         } else {
-          // All dice are kept → just tell server directly
-          const keptIndices = store.keptDiceSlots; // send the array containing nulls as well
+          const keptIndices = store.keptDiceSlots;
           if (store.socket) {
             store.socket.emit('COLLECT_TO_CUP', { keptIndices });
           }
         }
       }}
       onPointerOver={() => {
-        document.body.style.cursor = 'pointer';
-        setHovered(true);
+        if (!disabled) {
+          document.body.style.cursor = 'pointer';
+          setHovered(true);
+        }
       }}
       onPointerOut={() => {
         document.body.style.cursor = 'auto';

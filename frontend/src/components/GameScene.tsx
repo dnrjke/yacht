@@ -88,18 +88,10 @@ export function GameScene() {
       <DecisionButton />
       <ComboAnnouncement />
 
-      <OrbitControls 
-        makeDefault 
+      <OrbitControls
+        makeDefault
+        enabled={false}
         target={[centerX, 0, lookAtZ]}
-        minDistance={10}
-        maxDistance={60}
-        minPolarAngle={0} 
-        maxPolarAngle={Math.PI / 6} // 거의 수직(Top-down)에 가깝게 카메라 회전 범위를 제한
-        mouseButtons={{
-          LEFT: undefined, 
-          MIDDLE: THREE.MOUSE.PAN,
-          RIGHT: THREE.MOUSE.ROTATE
-        }}
       />
       <Environment preset="city" />
     </Canvas>
