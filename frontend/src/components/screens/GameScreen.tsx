@@ -79,6 +79,7 @@ export function GameScreen() {
   const setPhase = useGameStore((state) => state.setPhase);
   const [uiScale, setUiScale] = useState(getDesktopUiScale);
   const [aspectRatio, setAspectRatio] = useState(getAspectRatio);
+  const [sceneReady, setSceneReady] = useState(false);
   const [showHomeConfirm, setShowHomeConfirm] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
   const [volume, setVolume] = useState(soundManager.masterVolume);
@@ -294,7 +295,10 @@ export function GameScreen() {
       )}
 
       <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
-        <GameScene />
+        <GameScene onReady={() => setSceneReady(true)} />
+        {!sceneReady && (
+          <div style={{ position: 'absolute', inset: 0, background: '#1e1e1e', zIndex: 40 }} />
+        )}
         {isDebug && (
           <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(0,0,0,0.7)', color: 'lime', padding: '10px', fontFamily: 'monospace', zIndex: 100 }}>
             <p>DEBUG MODE ACTIVE</p>

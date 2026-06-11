@@ -44,20 +44,23 @@ export function SplashScreen() {
       cursor: loaded ? 'pointer' : 'default',
     }}>
       <h1 style={{ fontSize: 'clamp(2rem, 5vw, 4rem)', letterSpacing: '0.1em' }}>YACHT DICE</h1>
-      <p style={{
+      <p className="splash-prompt" style={{
         position: 'absolute',
         bottom: '10%',
         fontSize: 'clamp(0.9rem, 2vw, 1.3rem)',
         animation: loaded ? 'pulse 1.5s infinite' : 'none',
         opacity: loaded ? 1 : 0.5,
       }}>
-        {loaded ? 'Touch or Press Any Key to Start' : 'Loading...'}
+        {loaded ? 'Touch to Start' : 'Loading...'}
       </p>
       <style>{`
         @keyframes pulse {
           0% { opacity: 0.5; }
           50% { opacity: 1; }
           100% { opacity: 0.5; }
+        }
+        @media (min-width: 541px) {
+          .splash-prompt { display: none !important; }
         }
       `}</style>
     </div>

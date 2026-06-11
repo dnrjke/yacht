@@ -56,7 +56,7 @@ function ResponsiveCameraManager() {
   return null;
 }
 
-export function GameScene() {
+export function GameScene({ onReady }: { onReady?: () => void }) {
   const [dpr, setDpr] = useState(1.5);
 
   return (
@@ -64,6 +64,11 @@ export function GameScene() {
       camera={{ position: [centerX, BOARD_SIZE + PLAY_WALL_HEIGHT * 2 + 1, cameraZ], fov: 45 }}
       dpr={dpr}
       shadows
+      onCreated={() => {
+        if (onReady) {
+          requestAnimationFrame(() => requestAnimationFrame(onReady));
+        }
+      }}
     >
       <ResponsiveCameraManager />
       <PerformanceMonitor onDecline={() => setDpr(1)} onIncline={() => setDpr(1.5)} />
