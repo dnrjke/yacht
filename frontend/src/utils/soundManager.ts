@@ -32,7 +32,6 @@ class SoundManager {
   private masterGain: GainNode | null = null;
   private buffers = new Map<SoundName, AudioBuffer>();
   private loops = new Map<SoundName, { source: AudioBufferSourceNode; gain: GainNode }>();
-  private unlocked = false;
   private _masterVolume = loadVolume();
 
   private getContext(): AudioContext {
@@ -41,6 +40,7 @@ class SoundManager {
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.value = this._masterVolume;
       this.masterGain.connect(this.ctx.destination);
+      this.initVisibilityHandler();
     }
     return this.ctx;
   }
@@ -65,12 +65,20 @@ class SoundManager {
   }
 
   ensureUnlocked() {
-    if (this.unlocked) return;
     const ctx = this.getContext();
     if (ctx.state === 'suspended') {
       ctx.resume();
     }
-    this.unlocked = true;
+  }
+
+  private initVisibilityHandler() {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && this.ctx) {
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+    });
   }
 
   async preload() {

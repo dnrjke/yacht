@@ -164,7 +164,7 @@ export function GameScreen() {
   const previewBtnFontSize = `${Math.max(10, Math.round(11 * uiScale))}px`;
 
   return (
-    <div style={{ display: 'flex', width: '100%', height: '100%' }}>
+    <div style={{ display: 'flex', width: '100%', height: '100%', position: 'relative' }}>
       <div style={{
         flex: `0 0 ${sidebarWidth}px`,
         width: `${sidebarWidth}px`,
