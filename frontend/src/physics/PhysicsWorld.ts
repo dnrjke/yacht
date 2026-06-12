@@ -383,7 +383,7 @@ export class PhysicsWorld {
     }
   }
 
-  step(): void {
+  step(): boolean {
     if (this.pendingCupPos && this.pendingCupQuat) {
       const prevPos = this.cupBody.translation();
       const prevRot = this.cupBody.rotation();
@@ -421,11 +421,17 @@ export class PhysicsWorld {
 
       this.pendingCupPos = null;
       this.pendingCupQuat = null;
-    } else {
-      for (let i = 0; i < this.subSteps; i++) {
-        this.world.step();
-      }
+      return true;
     }
+
+    if (this.diceBodies.every(b => b.isSleeping())) {
+      return false;
+    }
+
+    for (let i = 0; i < this.subSteps; i++) {
+      this.world.step();
+    }
+    return true;
   }
 
   getDiceStates(): Array<{ position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } }> {

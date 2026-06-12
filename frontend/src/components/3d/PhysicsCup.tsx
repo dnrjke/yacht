@@ -18,6 +18,8 @@ export function PhysicsCup() {
   const canPour = useGameStore(state => state.canPour);
   const { camera, pointer } = useThree();
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -CUP_REST_Y);
+  const raycaster = useRef(new THREE.Raycaster());
+  const rayTarget = useRef(new THREE.Vector3());
 
   const cupPlayback = useRef<{ frames: any[], currentFrame: number } | null>(null);
 
@@ -86,12 +88,11 @@ export function PhysicsCup() {
     const physics = getPhysicsEngine();
     if (!physics) return;
 
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(pointer, camera);
-    const target = new THREE.Vector3();
-    raycaster.ray.intersectPlane(plane, target);
+    raycaster.current.setFromCamera(pointer, camera);
+    raycaster.current.ray.intersectPlane(plane, rayTarget.current);
 
-    if (target) {
+    if (rayTarget.current) {
+      const target = rayTarget.current;
       cupRef.current.position.lerp(target, 0.2);
 
       const speed = cupRef.current.position.distanceTo(prevCupPos.current);

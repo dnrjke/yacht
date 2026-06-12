@@ -33,16 +33,43 @@ class SoundManager {
   private buffers = new Map<SoundName, AudioBuffer>();
   private loops = new Map<SoundName, { source: AudioBufferSourceNode; gain: GainNode }>();
   private _masterVolume = loadVolume();
+  private listenersInitialized = false;
 
   private getContext(): AudioContext {
-    if (!this.ctx) {
-      this.ctx = new AudioContext();
-      this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = this._masterVolume;
-      this.masterGain.connect(this.ctx.destination);
-      this.initVisibilityHandler();
+    if (!this.ctx || this.ctx.state === 'closed') {
+      this.createContext();
     }
-    return this.ctx;
+    return this.ctx!;
+  }
+
+  private createContext() {
+    this.ctx = new AudioContext();
+    this.masterGain = this.ctx.createGain();
+    this.masterGain.gain.value = this._masterVolume;
+    this.masterGain.connect(this.ctx.destination);
+    // 이전 컨텍스트에 묶인 루프 소스는 모두 무효 — 맵만 비운다.
+    // 디코딩된 AudioBuffer는 컨텍스트 독립적이므로 재로드 불필요.
+    this.loops.clear();
+    this.initLifecycleHandlers();
+  }
+
+  // 모바일에서 장시간 백그라운드 후 복귀 시 오디오 세션이 OS에 의해 회수될 수 있다.
+  // resume()이 실패하거나 응답이 없으면 컨텍스트를 재생성해야 소리가 돌아온다.
+  private async resumeOrRecreate() {
+    if (!this.ctx) return;
+    if (this.ctx.state === 'closed') {
+      this.createContext();
+      return;
+    }
+    if ((this.ctx.state as string) !== 'running') {
+      await Promise.race([
+        this.ctx.resume().catch(() => {}),
+        new Promise<void>((resolve) => setTimeout(resolve, 500)),
+      ]);
+      if (this.ctx && (this.ctx.state as string) !== 'running') {
+        this.createContext();
+      }
+    }
   }
 
   private getMasterGain(): GainNode {
@@ -66,19 +93,30 @@ class SoundManager {
 
   ensureUnlocked() {
     const ctx = this.getContext();
-    if (ctx.state === 'suspended') {
-      ctx.resume();
+    if ((ctx.state as string) !== 'running') {
+      ctx.resume().catch(() => {});
     }
   }
 
-  private initVisibilityHandler() {
+  private initLifecycleHandlers() {
+    if (this.listenersInitialized) return;
+    this.listenersInitialized = true;
+
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && this.ctx) {
-        if (this.ctx.state === 'suspended') {
-          this.ctx.resume();
-        }
+      if (document.visibilityState === 'visible') {
+        this.resumeOrRecreate();
       }
     });
+
+    // iOS는 백그라운드 복귀 후 사용자 제스처 시점에만 resume을 허용하는 경우가 있다.
+    // 'interrupted'(iOS 비표준 상태) 포함, running이 아니면 터치 시 복구 시도.
+    const onGesture = () => {
+      if (this.ctx && (this.ctx.state as string) !== 'running') {
+        this.resumeOrRecreate();
+      }
+    };
+    document.addEventListener('touchstart', onGesture, { passive: true });
+    document.addEventListener('pointerdown', onGesture, { passive: true });
   }
 
   async preload() {

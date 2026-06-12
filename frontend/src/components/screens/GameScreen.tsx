@@ -22,21 +22,28 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function getDesktopUiScale() {
-  if (typeof window === 'undefined') {
-    return 1;
-  }
+// visualViewport 우선: 모바일 PWA 첫 기동 시 window.innerHeight가 안정화 이전 값으로
+// 고정될 수 있어(회전 전까지 resize 미발생) visualViewport에서 읽는다.
+function getViewportSize() {
+  if (typeof window === 'undefined') return { width: 1920, height: 1080 };
+  const vv = window.visualViewport;
+  return {
+    width: vv?.width ?? window.innerWidth,
+    height: vv?.height ?? window.innerHeight,
+  };
+}
 
+function getDesktopUiScale() {
   return clamp(
-    window.innerHeight / DESKTOP_BASE_HEIGHT,
+    getViewportSize().height / DESKTOP_BASE_HEIGHT,
     DESKTOP_MIN_SCALE,
     DESKTOP_MAX_HEIGHT / DESKTOP_BASE_HEIGHT
   );
 }
 
 function getAspectRatio() {
-  if (typeof window === 'undefined') return 16 / 9;
-  return window.innerWidth / window.innerHeight;
+  const { width, height } = getViewportSize();
+  return width / height;
 }
 
 function HomeIcon({ size = 18, color = '#aaa' }: { size?: number; color?: string }) {
@@ -117,12 +124,16 @@ export function GameScreen() {
 
     updateScale();
     window.addEventListener('resize', updateScale);
+    window.addEventListener('orientationchange', updateScale);
+    window.visualViewport?.addEventListener('resize', updateScale);
 
     return () => {
       if (frameId) {
         window.cancelAnimationFrame(frameId);
       }
       window.removeEventListener('resize', updateScale);
+      window.removeEventListener('orientationchange', updateScale);
+      window.visualViewport?.removeEventListener('resize', updateScale);
     };
   }, []);
 
