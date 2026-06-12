@@ -18,6 +18,10 @@ export function getPhysicsEngine(): PhysicsWorld | null {
   return engine;
 }
 
+export function resetPhysicsEngineState(): void {
+  engine?.resetForNewGame();
+}
+
 type Listener<T> = (data: T) => void;
 let pourListeners: Listener<PourResult>[] = [];
 

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { GamePhase, RulesCategory, SCORE_CATEGORIES, checkBonus, calculateScore, ComboResult, GAME_CONSTANTS } from '@yacht/core';
+import { resetPhysicsEngineState } from '../physics/physicsEngine';
 
 export type GameMode = 'local' | 'single';
 
@@ -158,21 +159,24 @@ export const useGameStore = create<GameState>((set) => ({
     activeCombo: null,
   })),
 
-  resetGame: () => set({
-    scores: { p1: { ...initialScores, Bonus: 0 }, p2: { ...initialScores, Bonus: 0 } },
-    currentTurn: 'p1',
-    rollCount: 0,
-    currentDiceValues: [1, 1, 1, 1, 1],
-    previewScores: {} as Record<RulesCategory, number>,
-    keptDiceSlots: [null, null, null, null, null],
-    canPour: true,
-    isInPlacementMode: false,
-    isWaitingForPlacement: false,
-    isReturningToCup: false,
-    isSyncingDice: false,
-    placementOrder: [0, 1, 2, 3, 4],
-    activeCombo: null,
-  }),
+  resetGame: () => {
+    resetPhysicsEngineState();
+    set({
+      scores: { p1: { ...initialScores, Bonus: 0 }, p2: { ...initialScores, Bonus: 0 } },
+      currentTurn: 'p1',
+      rollCount: 0,
+      currentDiceValues: [1, 1, 1, 1, 1],
+      previewScores: {} as Record<RulesCategory, number>,
+      keptDiceSlots: [null, null, null, null, null],
+      canPour: true,
+      isInPlacementMode: false,
+      isWaitingForPlacement: false,
+      isReturningToCup: false,
+      isSyncingDice: false,
+      placementOrder: [0, 1, 2, 3, 4],
+      activeCombo: null,
+    });
+  },
 }));
 
 // 싱글 모드에서 현재가 AI(P2) 턴인지 — 이벤트 핸들러용 getState 기반 헬퍼

@@ -286,6 +286,28 @@ export class PhysicsWorld {
     this.currentDiceValues = [1, 1, 1, 1, 1];
   }
 
+  resetForNewGame(): void {
+    const { CUP_REST_X, CUP_REST_Y, CUP_REST_Z } = BOARD_CONSTANTS;
+    const cupRotation = { x: 0, y: 0, z: 0, w: 1 };
+
+    this.setCupCollidersEnabled(true);
+    this.setBorderWallsEnabled(false);
+
+    this.cupBody.setTranslation({ x: CUP_REST_X, y: CUP_REST_Y, z: CUP_REST_Z }, true);
+    this.cupBody.setRotation(cupRotation, true);
+    this.cupBody.setNextKinematicTranslation({ x: CUP_REST_X, y: CUP_REST_Y, z: CUP_REST_Z });
+    this.cupBody.setNextKinematicRotation(cupRotation);
+
+    this.cupLidBody.setTranslation({ x: CUP_REST_X, y: CUP_REST_Y + 4.5, z: CUP_REST_Z }, true);
+    this.cupLidBody.setRotation(cupRotation, true);
+    this.cupLidBody.setNextKinematicTranslation({ x: CUP_REST_X, y: CUP_REST_Y + 4.5, z: CUP_REST_Z });
+    this.cupLidBody.setNextKinematicRotation(cupRotation);
+
+    this.pendingCupPos = null;
+    this.pendingCupQuat = null;
+    this.spawnDiceInCup();
+  }
+
   spawnNonKeptDiceInCup(keptIndices: (number | null)[]): void {
     const keptSet = new Set(keptIndices.filter(i => i !== null) as number[]);
     this.keptDice = this.diceBodies.map((_, i) => keptSet.has(i));
