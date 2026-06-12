@@ -2,7 +2,7 @@
   "name": "Yacht Dice",
   "short_name": "Yacht",
   "start_url": "./",
-  "display": "fullscreen",
+  "display": "standalone",
   "orientation": "any",
   "background_color": "#111111",
   "theme_color": "#111111",
