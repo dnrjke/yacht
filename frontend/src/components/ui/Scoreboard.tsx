@@ -1,7 +1,7 @@
 import React from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { SCORE_CATEGORIES, RulesCategory } from '@yacht/core';
-import { soundManager } from '../../utils/soundManager';
+import { useScoreClick } from './useScoreClick';
 import { useI18n } from '../../utils/useI18n';
 
 type ScoreboardProps = {
@@ -19,37 +19,13 @@ const COMPACT_BODY_MIN_PX = 9;
 const COMPACT_SECONDARY_MIN_PX = 8;
 
 export function Scoreboard({ uiScale = 1, compact = false, supernarrow: _supernarrow = false }: ScoreboardProps) {
-  const { scores, previewScores, updateScore, currentTurn, endTurn, isInPlacementMode, setPhase } = useGameStore();
+  const { scores, previewScores, currentTurn, isInPlacementMode } = useGameStore();
+  const handleScoreClick = useScoreClick();
   const { t } = useI18n();
 
   const upperCats: RulesCategory[] = ['Aces', 'Deuces', 'Threes', 'Fours', 'Fives', 'Sixes'];
   const p1Sub = upperCats.reduce((sum, c) => sum + (Number(scores.p1[c]) || 0), 0);
   const p2Sub = upperCats.reduce((sum, c) => sum + (Number(scores.p2[c]) || 0), 0);
-
-  const scorableCategories = SCORE_CATEGORIES.filter(c => c !== 'Bonus');
-
-  const handleScoreClick = (cat: RulesCategory) => {
-    if (!isInPlacementMode) return;
-    if (cat === 'Bonus') return;
-
-    const currentPlayerScores = scores[currentTurn];
-    if (currentPlayerScores[cat] !== null) return;
-
-    const scoreToRecord = previewScores[cat] ?? 0;
-    updateScore(currentTurn, cat, scoreToRecord);
-    soundManager.play('score');
-
-    const updatedCurrent = { ...scores[currentTurn], [cat]: scoreToRecord };
-    const otherPlayer = currentTurn === 'p1' ? 'p2' : 'p1';
-    const currentDone = scorableCategories.every(c => updatedCurrent[c] !== null);
-    const otherDone = scorableCategories.every(c => scores[otherPlayer][c] !== null);
-
-    if (currentDone && otherDone) {
-      setPhase('GAME_OVER');
-    } else {
-      endTurn();
-    }
-  };
 
   const titleMin = compact ? COMPACT_TITLE_MIN_PX : TITLE_MIN_PX;
   const bodyMin = compact ? COMPACT_BODY_MIN_PX : BODY_MIN_PX;

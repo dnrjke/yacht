@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { GameScene } from '../GameScene';
 import { Scoreboard } from '../ui/Scoreboard';
+import { PortraitScoreboard } from '../ui/PortraitScoreboard';
 import { ResultOverlay } from './ResultScreen';
 import { soundManager } from '../../utils/soundManager';
 import { useI18n } from '../../utils/useI18n';
@@ -17,6 +18,7 @@ const SIDEBAR_MIN_WIDTH = 250;
 const SIDEBAR_MID_MIN_WIDTH = 215;
 const SIDEBAR_NARROW_MIN_WIDTH = 180;
 const SIDEBAR_SUPERNARROW_MIN_WIDTH = 140;
+const SCOREBOARD_POS_KEY = 'yacht_portrait_scoreboard_pos';
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -74,6 +76,14 @@ function SpeakerIcon({ size = 18, color = '#aaa', muted = false }: { size?: numb
   );
 }
 
+function ChevronIcon({ size = 18, color = '#aaa', up = false }: { size?: number; color?: string; up?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+      {up ? <path d="M6 15l6-6 6 6" /> : <path d="M6 9l6 6 6-6" />}
+    </svg>
+  );
+}
+
 const PREVIEW_SOUNDS = [
   { name: 'pouring_dice' as const, label: 'Dice' },
   { name: 'score' as const, label: 'Score' },
@@ -84,8 +94,12 @@ export function GameScreen() {
   const isDebug = useGameStore((state) => state.isDebug);
   const phase = useGameStore((state) => state.phase);
   const setPhase = useGameStore((state) => state.setPhase);
+  const currentTurn = useGameStore((state) => state.currentTurn);
   const [uiScale, setUiScale] = useState(getDesktopUiScale);
   const [aspectRatio, setAspectRatio] = useState(getAspectRatio);
+  const [scoreboardOnTop, setScoreboardOnTop] = useState(() => {
+    try { return localStorage.getItem(SCOREBOARD_POS_KEY) !== 'bottom'; } catch { return true; }
+  });
   const [sceneReady, setSceneReady] = useState(false);
   const [showHomeConfirm, setShowHomeConfirm] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
@@ -94,6 +108,7 @@ export function GameScreen() {
   const volumeBtnRef = useRef<HTMLButtonElement>(null);
   const { t } = useI18n();
 
+  const portrait = aspectRatio < 1;
   const squarish = aspectRatio <= SQUARISH_ASPECT_RATIO;
   const compact = uiScale <= COMPACT_THRESHOLD;
   const narrow = uiScale <= NARROW_THRESHOLD;
@@ -174,95 +189,95 @@ export function GameScreen() {
 
   const previewBtnFontSize = `${Math.max(10, Math.round(11 * uiScale))}px`;
 
-  return (
-    <div style={{ display: 'flex', width: '100%', height: '100%', position: 'relative' }}>
-      <div style={{
-        flex: `0 0 ${sidebarWidth}px`,
-        width: `${sidebarWidth}px`,
-        minWidth: `${sidebarMinWidth}px`,
-        background: '#2a2a2a',
-        color: 'white',
-        borderRight: `${Math.max(1, Math.round(2 * uiScale))}px solid #444`,
-        padding: scaledPx(20),
-        zIndex: 10,
-        height: '100%',
-        minHeight: 0,
-        overflow: 'hidden',
-      }}>
-        <Scoreboard uiScale={uiScale} compact={compact} supernarrow={supernarrow} />
-      </div>
+  const toggleScoreboardPos = () => {
+    setScoreboardOnTop(prev => {
+      const next = !prev;
+      try { localStorage.setItem(SCOREBOARD_POS_KEY, next ? 'top' : 'bottom'); } catch {}
+      return next;
+    });
+  };
 
-      {/* Toolbar: right outside scoreboard */}
-      <div style={{
-        position: 'absolute',
-        left: `${sidebarWidth + Math.max(1, Math.round(2 * uiScale)) + Math.max(6, Math.round(8 * uiScale))}px`,
-        top: `${Math.max(6, Math.round(8 * uiScale))}px`,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: `${toolbarGap}px`,
-        zIndex: 60,
-      }}>
-        <button onClick={() => setShowHomeConfirm(true)} style={toolbarBtnStyle}>
-          <HomeIcon size={iconSize} color="#aaa" />
-        </button>
-        <div style={{ position: 'relative' }}>
-          <button ref={volumeBtnRef} onClick={() => setShowVolume(!showVolume)} style={toolbarBtnStyle}>
-            <SpeakerIcon size={iconSize} color="#aaa" muted={isMuted} />
-          </button>
-          {showVolume && (
-            <div ref={volumePopoverRef} style={{
-              position: 'absolute',
-              left: `${btnSize + 8}px`,
-              top: 0,
-              background: '#1a1a1a',
-              border: `${Math.max(1, Math.round(uiScale))}px solid #555`,
-              borderRadius: `${Math.max(4, Math.round(6 * uiScale))}px`,
-              padding: `${Math.max(6, Math.round(8 * uiScale))}px ${Math.max(10, Math.round(14 * uiScale))}px`,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: `${Math.max(6, Math.round(8 * uiScale))}px`,
-              whiteSpace: 'nowrap',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: `${Math.max(8, Math.round(10 * uiScale))}px` }}>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={volume}
-                  onChange={handleVolumeChange}
-                  style={{ width: `${Math.max(80, Math.round(120 * uiScale))}px`, accentColor: '#4CAF50', cursor: 'pointer' }}
-                />
-                <span style={{ color: '#888', fontSize: `${Math.max(11, Math.round(13 * uiScale))}px`, minWidth: '32px', textAlign: 'right' }}>
-                  {Math.round(volume * 100)}%
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: `${Math.max(4, Math.round(4 * uiScale))}px` }}>
-                {PREVIEW_SOUNDS.map(({ name, label }) => (
-                  <button
-                    key={name}
-                    onClick={() => soundManager.play(name)}
-                    style={{
-                      padding: `${Math.max(3, Math.round(4 * uiScale))}px ${Math.max(6, Math.round(8 * uiScale))}px`,
-                      fontSize: previewBtnFontSize,
-                      background: '#333',
-                      color: '#ccc',
-                      border: `1px solid #555`,
-                      borderRadius: `${Math.max(3, Math.round(4 * uiScale))}px`,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+  const turnLabel = currentTurn === 'p1' ? t('myTurn') : t('opponentTurn');
+  const turnColor = currentTurn === 'p1' ? '#4CAF50' : '#2196F3';
+
+  const homeButton = (
+    <button onClick={() => setShowHomeConfirm(true)} style={toolbarBtnStyle}>
+      <HomeIcon size={iconSize} color="#aaa" />
+    </button>
+  );
+
+  const renderVolumeControl = (popoverPos: React.CSSProperties) => (
+    <div style={{ position: 'relative' }}>
+      <button ref={volumeBtnRef} onClick={() => setShowVolume(!showVolume)} style={toolbarBtnStyle}>
+        <SpeakerIcon size={iconSize} color="#aaa" muted={isMuted} />
+      </button>
+      {showVolume && (
+        <div ref={volumePopoverRef} style={{
+          position: 'absolute',
+          ...popoverPos,
+          background: '#1a1a1a',
+          border: `${Math.max(1, Math.round(uiScale))}px solid #555`,
+          borderRadius: `${Math.max(4, Math.round(6 * uiScale))}px`,
+          padding: `${Math.max(6, Math.round(8 * uiScale))}px ${Math.max(10, Math.round(14 * uiScale))}px`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: `${Math.max(6, Math.round(8 * uiScale))}px`,
+          whiteSpace: 'nowrap',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: `${Math.max(8, Math.round(10 * uiScale))}px` }}>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={volume}
+              onChange={handleVolumeChange}
+              style={{ width: `${Math.max(80, Math.round(120 * uiScale))}px`, accentColor: '#4CAF50', cursor: 'pointer' }}
+            />
+            <span style={{ color: '#888', fontSize: `${Math.max(11, Math.round(13 * uiScale))}px`, minWidth: '32px', textAlign: 'right' }}>
+              {Math.round(volume * 100)}%
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: `${Math.max(4, Math.round(4 * uiScale))}px` }}>
+            {PREVIEW_SOUNDS.map(({ name, label }) => (
+              <button
+                key={name}
+                onClick={() => soundManager.play(name)}
+                style={{
+                  padding: `${Math.max(3, Math.round(4 * uiScale))}px ${Math.max(6, Math.round(8 * uiScale))}px`,
+                  fontSize: previewBtnFontSize,
+                  background: '#333',
+                  color: '#ccc',
+                  border: `1px solid #555`,
+                  borderRadius: `${Math.max(3, Math.round(4 * uiScale))}px`,
+                  cursor: 'pointer',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+    </div>
+  );
 
-      {/* Home confirm dialog */}
-      {showHomeConfirm && (
+  const sceneContent = (
+    <>
+      <GameScene onReady={() => setSceneReady(true)} />
+      {!sceneReady && (
+        <div style={{ position: 'absolute', inset: 0, background: '#1e1e1e', zIndex: 40 }} />
+      )}
+      {isDebug && (
+        <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(0,0,0,0.7)', color: 'lime', padding: '10px', fontFamily: 'monospace', zIndex: 100 }}>
+          <p>DEBUG MODE ACTIVE</p>
+        </div>
+      )}
+      {phase === 'GAME_OVER' && <ResultOverlay />}
+    </>
+  );
+
+  const homeConfirmOverlay = showHomeConfirm && (
         <div
           onClick={() => setShowHomeConfirm(false)}
           style={{
@@ -303,19 +318,113 @@ export function GameScreen() {
             </div>
           </div>
         </div>
-      )}
+  );
+
+  // 세로(DS형) 레이아웃: 점수판 / 밴드(버튼·턴 탭·전환) / 게임 화면 상하 분할.
+  // DOM 순서는 고정하고 CSS order로만 상하 반전 — Canvas 리마운트 방지.
+  if (portrait) {
+    const bandH = Math.max(40, Math.round(48 * uiScale));
+    const tabRadius = Math.max(8, Math.round(12 * uiScale));
+    const tabBorder = `${Math.max(1, Math.round(uiScale))}px solid #444`;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', position: 'relative' }}>
+        <div style={{ order: scoreboardOnTop ? 0 : 2, height: '40%', minHeight: 0, zIndex: 10 }}>
+          <PortraitScoreboard uiScale={uiScale} />
+        </div>
+
+        <div style={{
+          order: 1,
+          height: `${bandH}px`,
+          flex: 'none',
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 8px',
+          zIndex: 60,
+        }}>
+          <div style={{ display: 'flex', gap: `${toolbarGap}px` }}>
+            {homeButton}
+            {renderVolumeControl(scoreboardOnTop
+              ? { top: `${btnSize + 8}px`, left: 0 }
+              : { bottom: `${btnSize + 8}px`, left: 0 })}
+          </div>
+
+          {/* 턴 표시 볼록 탭 — 점수판과 같은 배경으로 이어진 돌출부 */}
+          <div style={{
+            position: 'absolute',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            top: 0,
+            bottom: 0,
+            minWidth: '38%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#1a1a1a',
+            borderLeft: tabBorder,
+            borderRight: tabBorder,
+            ...(scoreboardOnTop
+              ? { borderBottom: tabBorder, borderRadius: `0 0 ${tabRadius}px ${tabRadius}px` }
+              : { borderTop: tabBorder, borderRadius: `${tabRadius}px ${tabRadius}px 0 0` }),
+            color: turnColor,
+            fontWeight: 'bold',
+            fontSize: `${Math.max(13, Math.round(16 * uiScale))}px`,
+            pointerEvents: 'none',
+          }}>
+            {turnLabel}
+          </div>
+
+          <button onClick={toggleScoreboardPos} style={toolbarBtnStyle}>
+            <ChevronIcon size={iconSize} color="#aaa" up={!scoreboardOnTop} />
+          </button>
+        </div>
+
+        <div style={{ order: scoreboardOnTop ? 2 : 0, flex: 1, minHeight: 0, position: 'relative' }}>
+          {sceneContent}
+        </div>
+
+        {homeConfirmOverlay}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', width: '100%', height: '100%', position: 'relative' }}>
+      <div style={{
+        flex: `0 0 ${sidebarWidth}px`,
+        width: `${sidebarWidth}px`,
+        minWidth: `${sidebarMinWidth}px`,
+        background: '#2a2a2a',
+        color: 'white',
+        borderRight: `${Math.max(1, Math.round(2 * uiScale))}px solid #444`,
+        padding: scaledPx(20),
+        zIndex: 10,
+        height: '100%',
+        minHeight: 0,
+        overflow: 'hidden',
+      }}>
+        <Scoreboard uiScale={uiScale} compact={compact} supernarrow={supernarrow} />
+      </div>
+
+      {/* Toolbar: right outside scoreboard */}
+      <div style={{
+        position: 'absolute',
+        left: `${sidebarWidth + Math.max(1, Math.round(2 * uiScale)) + Math.max(6, Math.round(8 * uiScale))}px`,
+        top: `${Math.max(6, Math.round(8 * uiScale))}px`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: `${toolbarGap}px`,
+        zIndex: 60,
+      }}>
+        {homeButton}
+        {renderVolumeControl({ left: `${btnSize + 8}px`, top: 0 })}
+      </div>
+
+      {homeConfirmOverlay}
 
       <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
-        <GameScene onReady={() => setSceneReady(true)} />
-        {!sceneReady && (
-          <div style={{ position: 'absolute', inset: 0, background: '#1e1e1e', zIndex: 40 }} />
-        )}
-        {isDebug && (
-          <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(0,0,0,0.7)', color: 'lime', padding: '10px', fontFamily: 'monospace', zIndex: 100 }}>
-            <p>DEBUG MODE ACTIVE</p>
-          </div>
-        )}
-        {phase === 'GAME_OVER' && <ResultOverlay />}
+        {sceneContent}
       </div>
     </div>
   );
