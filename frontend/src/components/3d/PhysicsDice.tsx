@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo } from 'react';
-import { useGameStore } from '../../store/gameStore';
+import { useGameStore, isAiTurnNow } from '../../store/gameStore';
 import { getPhysicsEngine, onPourResult } from '../../physics/physicsEngine';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import * as THREE from 'three';
@@ -369,6 +369,7 @@ export function PhysicsDice() {
           material={diceMaterials}
           onPointerDown={isInPlacementMode ? (e) => {
             e.stopPropagation();
+            if (isAiTurnNow()) return;
             const s = useGameStore.getState();
             const isKept = s.keptDiceSlots.includes(idx);
             if (isKept) {

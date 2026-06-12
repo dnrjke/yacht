@@ -29,3 +29,15 @@ export function onPourResult(cb: Listener<PourResult>): () => void {
 export function emitPourResult(result: PourResult): void {
   pourListeners.forEach(cb => cb(result));
 }
+
+// AI 붓기 요청 — AiController가 발행, PhysicsCup이 구독해 셰이크 연출 후 붓기 수행
+let aiPourListeners: Array<() => void> = [];
+
+export function onAiPour(cb: () => void): () => void {
+  aiPourListeners.push(cb);
+  return () => { aiPourListeners = aiPourListeners.filter(c => c !== cb); };
+}
+
+export function requestAiPour(): void {
+  aiPourListeners.forEach(cb => cb());
+}

@@ -14,6 +14,8 @@ const LANGUAGES = Object.entries(LANGUAGE_LABELS) as [Language, string][];
 
 export function MainMenuScreen() {
   const setPhase = useGameStore((state) => state.setPhase);
+  const setGameMode = useGameStore((state) => state.setGameMode);
+  const resetGame = useGameStore((state) => state.resetGame);
   const [showSettings, setShowSettings] = useState(false);
   const [volume, setVolume] = useState(soundManager.masterVolume);
   const { t, lang, setLanguage } = useI18n();
@@ -38,8 +40,14 @@ export function MainMenuScreen() {
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', background: '#222', color: '#fff' }}>
       <h1>Yacht Dice</h1>
       <button
-        onClick={() => setPhase('GAME')}
+        onClick={() => { resetGame(); setGameMode('single'); setPhase('GAME'); }}
         style={{ ...btnStyle, background: '#4CAF50' }}
+      >
+        Single Play
+      </button>
+      <button
+        onClick={() => { resetGame(); setGameMode('local'); setPhase('GAME'); }}
+        style={{ ...btnStyle, background: '#2196F3' }}
       >
         Local Play
       </button>

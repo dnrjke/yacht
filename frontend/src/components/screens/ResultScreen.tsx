@@ -7,7 +7,7 @@ import { useI18n } from '../../utils/useI18n';
 const REVEAL_DELAY_MS = 1000;
 
 export function ResultOverlay() {
-  const { scores, setPhase, resetGame } = useGameStore();
+  const { scores, setPhase, resetGame, gameMode } = useGameStore();
   const [visible, setVisible] = useState(false);
   const { t } = useI18n();
 
@@ -24,8 +24,9 @@ export function ResultOverlay() {
     return () => clearTimeout(timer);
   }, []);
 
+  const p2Name = gameMode === 'single' ? 'AI' : 'Player 2';
   const winnerColor = winner === 'p1' ? '#4CAF50' : winner === 'p2' ? '#2196F3' : '#FFD700';
-  const winnerText = winner === 'p1' ? 'Player 1 Wins!' : winner === 'p2' ? 'Player 2 Wins!' : 'Draw!';
+  const winnerText = winner === 'p1' ? 'Player 1 Wins!' : winner === 'p2' ? `${p2Name} Wins!` : 'Draw!';
 
   const handleRematch = () => {
     resetGame();
@@ -80,7 +81,7 @@ export function ResultOverlay() {
           </div>
           <div style={{ fontSize: '1.2rem', color: '#666' }}>vs</div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '0.9rem', color: '#999', marginBottom: '8px' }}>Player 2</div>
+            <div style={{ fontSize: '0.9rem', color: '#999', marginBottom: '8px' }}>{p2Name}</div>
             <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#2196F3' }}>{p2Total}</div>
           </div>
         </div>

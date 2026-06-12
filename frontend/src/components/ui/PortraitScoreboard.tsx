@@ -16,7 +16,7 @@ const SECONDARY_MIN_PX = 9;
 type Props = { uiScale?: number };
 
 export function PortraitScoreboard({ uiScale = 1 }: Props) {
-  const { scores, previewScores, currentTurn, isInPlacementMode } = useGameStore();
+  const { scores, previewScores, currentTurn, isInPlacementMode, gameMode } = useGameStore();
   const handleScoreClick = useScoreClick();
 
   const p1Sub = UPPER_CATS.reduce((sum, c) => sum + (Number(scores.p1[c]) || 0), 0);
@@ -60,7 +60,7 @@ export function PortraitScoreboard({ uiScale = 1 }: Props) {
     <tr style={{ borderBottom: `${borderPx(2)} solid #555`, color: '#aaa', fontSize: secondaryFontPx(12) }}>
       <th style={{ padding: scaledPx(4), textAlign: 'left' }}>Category</th>
       <th style={{ width: scaledPx(48, 36) }}>P1</th>
-      <th style={{ width: scaledPx(48, 36) }}>P2</th>
+      <th style={{ width: scaledPx(48, 36) }}>{gameMode === 'single' ? 'AI' : 'P2'}</th>
     </tr>
   );
 

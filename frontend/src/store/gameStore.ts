@@ -1,9 +1,14 @@
 import { create } from 'zustand';
 import { GamePhase, RulesCategory, SCORE_CATEGORIES, checkBonus, calculateScore, ComboResult, GAME_CONSTANTS } from '@yacht/core';
 
+export type GameMode = 'local' | 'single';
+
 interface GameState {
   phase: GamePhase;
   setPhase: (phase: GamePhase) => void;
+
+  gameMode: GameMode;
+  setGameMode: (mode: GameMode) => void;
 
   isDebug: boolean;
   setIsDebug: (val: boolean) => void;
@@ -55,6 +60,9 @@ const initialScores = SCORE_CATEGORIES.reduce((acc, cat) => {
 export const useGameStore = create<GameState>((set) => ({
   phase: 'LOBBY',
   setPhase: (phase) => set({ phase }),
+
+  gameMode: 'local',
+  setGameMode: (gameMode) => set({ gameMode }),
 
   isDebug: false,
   setIsDebug: (isDebug) => set({ isDebug }),
@@ -166,3 +174,9 @@ export const useGameStore = create<GameState>((set) => ({
     activeCombo: null,
   }),
 }));
+
+// 싱글 모드에서 현재가 AI(P2) 턴인지 — 이벤트 핸들러용 getState 기반 헬퍼
+export function isAiTurnNow(): boolean {
+  const s = useGameStore.getState();
+  return s.gameMode === 'single' && s.currentTurn === 'p2';
+}

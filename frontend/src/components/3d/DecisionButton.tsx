@@ -1,6 +1,6 @@
 import { useRef, useMemo, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { useGameStore } from '../../store/gameStore';
+import { useGameStore, isAiTurnNow } from '../../store/gameStore';
 import { GAME_CONSTANTS } from '@yacht/core';
 import { soundManager } from '../../utils/soundManager';
 import { useI18n } from '../../utils/useI18n';
@@ -98,7 +98,7 @@ export function DecisionButton() {
       material={material}
       onPointerDown={(e) => {
         e.stopPropagation();
-        if (disabled) return;
+        if (disabled || isAiTurnNow()) return;
         soundManager.play('reroll');
         const store = useGameStore.getState();
         store.setIsInPlacementMode(false);

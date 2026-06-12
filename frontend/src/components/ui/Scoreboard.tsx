@@ -19,7 +19,7 @@ const COMPACT_BODY_MIN_PX = 9;
 const COMPACT_SECONDARY_MIN_PX = 8;
 
 export function Scoreboard({ uiScale = 1, compact = false, supernarrow: _supernarrow = false }: ScoreboardProps) {
-  const { scores, previewScores, currentTurn, isInPlacementMode } = useGameStore();
+  const { scores, previewScores, currentTurn, isInPlacementMode, gameMode } = useGameStore();
   const handleScoreClick = useScoreClick();
   const { t } = useI18n();
 
@@ -42,8 +42,12 @@ export function Scoreboard({ uiScale = 1, compact = false, supernarrow: _superna
   const pad = compact ? 4 : 10;
   const cellPadV = compact ? 3 : 10;
   const cellPadH = compact ? 4 : 8;
-  const turnLabel = currentTurn === 'p1' ? t('myTurn') : (compact ? t('opponentShort') : t('opponentTurn'));
+  const isSingle = gameMode === 'single';
+  const turnLabel = currentTurn === 'p1'
+    ? t('myTurn')
+    : isSingle ? t('aiTurn') : (compact ? t('opponentShort') : t('opponentTurn'));
   const turnColor = currentTurn === 'p1' ? '#4CAF50' : '#2196F3';
+  const p2Label = isSingle ? 'AI' : 'P2';
 
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: scaledPx(pad), background: '#1a1a1a', borderRadius: scaledPx(compact ? 4 : 8), color: '#fff', fontSize: bodyFontPx(14) }}>
@@ -60,7 +64,7 @@ export function Scoreboard({ uiScale = 1, compact = false, supernarrow: _superna
               {compact ? turnLabel : 'Category'}
             </th>
             <th style={{ width: scaledPx(60, 40) }}>P1</th>
-            <th style={{ width: scaledPx(60, 40) }}>P2</th>
+            <th style={{ width: scaledPx(60, 40) }}>{p2Label}</th>
           </tr>
         </thead>
         <tbody>

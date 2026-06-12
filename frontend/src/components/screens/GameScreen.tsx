@@ -3,6 +3,7 @@ import { useGameStore } from '../../store/gameStore';
 import { GameScene } from '../GameScene';
 import { Scoreboard } from '../ui/Scoreboard';
 import { PortraitScoreboard } from '../ui/PortraitScoreboard';
+import { AiController } from '../../ai/AiController';
 import { ResultOverlay } from './ResultScreen';
 import { soundManager } from '../../utils/soundManager';
 import { useI18n } from '../../utils/useI18n';
@@ -95,6 +96,7 @@ export function GameScreen() {
   const phase = useGameStore((state) => state.phase);
   const setPhase = useGameStore((state) => state.setPhase);
   const currentTurn = useGameStore((state) => state.currentTurn);
+  const gameMode = useGameStore((state) => state.gameMode);
   const [uiScale, setUiScale] = useState(getDesktopUiScale);
   const [aspectRatio, setAspectRatio] = useState(getAspectRatio);
   const [scoreboardOnTop, setScoreboardOnTop] = useState(() => {
@@ -197,7 +199,7 @@ export function GameScreen() {
     });
   };
 
-  const turnLabel = currentTurn === 'p1' ? t('myTurn') : t('opponentTurn');
+  const turnLabel = currentTurn === 'p1' ? t('myTurn') : (gameMode === 'single' ? t('aiTurn') : t('opponentTurn'));
   const turnColor = currentTurn === 'p1' ? '#4CAF50' : '#2196F3';
 
   const homeButton = (
@@ -265,6 +267,7 @@ export function GameScreen() {
   const sceneContent = (
     <>
       <GameScene onReady={() => setSceneReady(true)} />
+      <AiController />
       {!sceneReady && (
         <div style={{ position: 'absolute', inset: 0, background: '#1e1e1e', zIndex: 40 }} />
       )}
