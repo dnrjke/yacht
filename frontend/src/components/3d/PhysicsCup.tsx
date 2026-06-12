@@ -2,6 +2,7 @@ import { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useGameStore } from '../../store/gameStore';
 import { soundManager } from '../../utils/soundManager';
+import { getPhysicsEngine, emitPourResult } from '../../physics/physicsEngine';
 import * as THREE from 'three';
 import { BOARD_CONSTANTS } from '@yacht/core';
 
@@ -14,37 +15,44 @@ export function PhysicsCup() {
   const isDragging = useRef(false);
   const isPouring = useRef(false);
   const prevCupPos = useRef(new THREE.Vector3());
-  const socket = useGameStore(state => state.socket);
   const canPour = useGameStore(state => state.canPour);
   const { camera, pointer } = useThree();
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -CUP_REST_Y);
 
-  // Cup trajectory playback
   const cupPlayback = useRef<{ frames: any[], currentFrame: number } | null>(null);
 
   useEffect(() => {
     const handleUp = () => {
       soundManager.stopLoop('rolling_dice', 500);
 
-      if (!isDragging.current || !cupRef.current || !socket) {
+      if (!isDragging.current || !cupRef.current) {
         isDragging.current = false;
         return;
       }
 
-      if (canPour) {
-        socket.emit('POUR_CUP', {
-          position: {
+      const physics = getPhysicsEngine();
+      if (canPour && physics && physics.allDiceReadyToPour()) {
+        const result = physics.simulatePour(
+          {
             x: cupRef.current.position.x,
             y: cupRef.current.position.y,
             z: cupRef.current.position.z
           },
-          quaternion: {
+          {
             x: cupRef.current.quaternion.x,
             y: cupRef.current.quaternion.y,
             z: cupRef.current.quaternion.z,
             w: cupRef.current.quaternion.w
           }
-        });
+        );
+
+        isPouring.current = true;
+        cupPlayback.current = {
+          frames: result.cupTrajectory,
+          currentFrame: 0
+        };
+
+        emitPourResult(result);
         soundManager.play('pouring_dice', { delay: POURING_DELAY_MS });
       }
 
@@ -52,28 +60,11 @@ export function PhysicsCup() {
     };
     window.addEventListener('pointerup', handleUp);
     return () => window.removeEventListener('pointerup', handleUp);
-  }, [socket, canPour]);
-
-  // Listen for POUR_RESULT to play back cup trajectory
-  useEffect(() => {
-    if (!socket) return;
-
-    const handlePourResult = (result: { cupTrajectory: any[] }) => {
-      isPouring.current = true;
-      cupPlayback.current = {
-        frames: result.cupTrajectory,
-        currentFrame: 0
-      };
-    };
-
-    socket.on('POUR_RESULT', handlePourResult);
-    return () => { socket.off('POUR_RESULT', handlePourResult); };
-  }, [socket]);
+  }, [canPour]);
 
   useFrame(() => {
     if (!cupRef.current) return;
 
-    // Play back cup trajectory from pour
     if (cupPlayback.current) {
       const { frames, currentFrame } = cupPlayback.current;
       if (currentFrame < frames.length) {
@@ -90,8 +81,10 @@ export function PhysicsCup() {
       return;
     }
 
-    // Normal drag logic
-    if (!socket || !isDragging.current) return;
+    if (!isDragging.current) return;
+
+    const physics = getPhysicsEngine();
+    if (!physics) return;
 
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(pointer, camera);
@@ -106,10 +99,10 @@ export function PhysicsCup() {
       const volume = Math.min(speed / 0.8, 1);
       soundManager.setLoopVolume('rolling_dice', volume);
 
-      socket.emit('CUP_TRANSFORM', {
-        position: { x: cupRef.current.position.x, y: cupRef.current.position.y, z: cupRef.current.position.z },
-        quaternion: { x: cupRef.current.quaternion.x, y: cupRef.current.quaternion.y, z: cupRef.current.quaternion.z, w: cupRef.current.quaternion.w }
-      });
+      physics.updateCupTransform(
+        { x: cupRef.current.position.x, y: cupRef.current.position.y, z: cupRef.current.position.z },
+        { x: cupRef.current.quaternion.x, y: cupRef.current.quaternion.y, z: cupRef.current.quaternion.z, w: cupRef.current.quaternion.w }
+      );
     }
   });
 
@@ -127,12 +120,10 @@ export function PhysicsCup() {
       onPointerOver={() => document.body.style.cursor = 'grab'}
       onPointerOut={() => document.body.style.cursor = 'auto'}
     >
-      {/* Cup base */}
       <mesh castShadow receiveShadow position={[0, -4, 0]}>
         <cylinderGeometry args={[4.4, 4.4, 0.4, 32]} />
         <meshStandardMaterial color="#8B4513" />
       </mesh>
-      {/* Cup wall */}
       <mesh castShadow receiveShadow>
         <cylinderGeometry args={[4.4, 4.4, 8, 32, 1, true]} />
         <meshStandardMaterial color="#8B4513" side={THREE.DoubleSide} />

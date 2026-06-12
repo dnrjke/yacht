@@ -8,6 +8,7 @@ import { ComboAnnouncement } from './3d/ComboAnnouncement';
 import { useState, useEffect } from 'react';
 import * as THREE from 'three';
 import { BOARD_CONSTANTS } from '@yacht/core';
+import { initPhysicsEngine } from '../physics/physicsEngine';
 
 const {
   BOARD_SIZE,
@@ -58,6 +59,13 @@ function ResponsiveCameraManager() {
 
 export function GameScene({ onReady }: { onReady?: () => void }) {
   const [dpr, setDpr] = useState(1.5);
+  const [physicsReady, setPhysicsReady] = useState(false);
+
+  useEffect(() => {
+    initPhysicsEngine().then(() => setPhysicsReady(true));
+  }, []);
+
+  if (!physicsReady) return null;
 
   return (
     <Canvas

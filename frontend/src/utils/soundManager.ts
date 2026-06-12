@@ -1,15 +1,17 @@
 type SoundName = 'make' | 'yacht' | 'score' | 'rolling_dice' | 'pouring_dice' | 'victory' | 'tap' | 'tap_smooth' | 'reroll';
 
+const BASE = import.meta.env.BASE_URL ?? '/';
+
 const SOUND_FILES: Record<SoundName, string> = {
-  make: '/sounds/make.mp3',
-  yacht: '/sounds/yacht.mp3',
-  score: '/sounds/score.mp3',
-  rolling_dice: '/sounds/rolling_dice.mp3',
-  pouring_dice: '/sounds/pouring_dice.mp3',
-  victory: '/sounds/victory.mp3',
-  tap: '/sounds/tap.mp3',
-  tap_smooth: '/sounds/tap_smooth.mp3',
-  reroll: '/sounds/reroll.mp3',
+  make: `${BASE}sounds/make.mp3`,
+  yacht: `${BASE}sounds/yacht.mp3`,
+  score: `${BASE}sounds/score.mp3`,
+  rolling_dice: `${BASE}sounds/rolling_dice.mp3`,
+  pouring_dice: `${BASE}sounds/pouring_dice.mp3`,
+  victory: `${BASE}sounds/victory.mp3`,
+  tap: `${BASE}sounds/tap.mp3`,
+  tap_smooth: `${BASE}sounds/tap_smooth.mp3`,
+  reroll: `${BASE}sounds/reroll.mp3`,
 };
 
 const STORAGE_KEY = 'yacht_master_volume';

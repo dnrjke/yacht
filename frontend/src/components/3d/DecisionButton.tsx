@@ -4,6 +4,7 @@ import { useGameStore } from '../../store/gameStore';
 import { GAME_CONSTANTS } from '@yacht/core';
 import { soundManager } from '../../utils/soundManager';
 import { useI18n } from '../../utils/useI18n';
+import { getPhysicsEngine } from '../../physics/physicsEngine';
 import * as THREE from 'three';
 
 // Scratch vectors — reused every frame
@@ -106,10 +107,12 @@ export function DecisionButton() {
         if (store.placementOrder.length > 0) {
           store.setIsReturningToCup(true);
         } else {
-          const keptIndices = store.keptDiceSlots;
-          if (store.socket) {
-            store.socket.emit('COLLECT_TO_CUP', { keptIndices });
+          const physics = getPhysicsEngine();
+          if (physics) {
+            physics.spawnNonKeptDiceInCup(store.keptDiceSlots);
           }
+          store.setIsSyncingDice(false);
+          store.setCanPour(true);
         }
       }}
       onPointerOver={() => {

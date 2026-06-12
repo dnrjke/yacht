@@ -59,9 +59,6 @@ export function SplashScreen() {
           50% { opacity: 1; }
           100% { opacity: 0.5; }
         }
-        @media (min-width: 541px) {
-          .splash-prompt { display: none !important; }
-        }
       `}</style>
     </div>
   );

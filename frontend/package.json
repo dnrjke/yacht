@@ -10,16 +10,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@yacht/core": "*",
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "@react-three/drei": "^9.105.6",
-    "three-mesh-bvh": "^0.7.8",
     "@react-three/fiber": "^8.16.2",
+    "@yacht/core": "*",
     "lucide-react": "^0.378.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.23.1",
     "socket.io-client": "^4.7.5",
     "three": "^0.164.0",
+    "three-mesh-bvh": "^0.7.8",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
