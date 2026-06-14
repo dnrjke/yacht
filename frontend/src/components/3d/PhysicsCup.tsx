@@ -23,7 +23,7 @@ export function PhysicsCup() {
   const raycaster = useRef(new THREE.Raycaster());
   const rayTarget = useRef(new THREE.Vector3());
 
-  const cupPlayback = useRef<{ frames: any[], currentFrame: number } | null>(null);
+  const cupPlayback = useRef<{ frames: any[], time: number } | null>(null);
   const aiShake = useRef<{ t: number; center: THREE.Vector3; target: THREE.Vector3 } | null>(null);
 
   // 사람/AI 공용 붓기 진입점 — 성공 시 PourResult가 발행되어 재생이 시작된다
@@ -54,7 +54,7 @@ export function PhysicsCup() {
     const unsubPour = onPourResult((result) => {
       aiShake.current = null;
       isPouring.current = true;
-      cupPlayback.current = { frames: result.cupTrajectory, currentFrame: 0 };
+      cupPlayback.current = { frames: result.cupTrajectory, time: 0 };
       soundManager.stopLoop('rolling_dice', 200);
       soundManager.play('pouring_dice', { delay: POURING_DELAY_MS });
     });
@@ -102,12 +102,16 @@ export function PhysicsCup() {
     if (!cupRef.current) return;
 
     if (cupPlayback.current) {
-      const { frames, currentFrame } = cupPlayback.current;
-      if (currentFrame < frames.length) {
-        const frame = frames[currentFrame];
+      const FRAME_DT = 1 / 60;
+      cupPlayback.current.time += delta;
+      const frameIndex = Math.min(
+        Math.floor(cupPlayback.current.time / FRAME_DT),
+        cupPlayback.current.frames.length - 1
+      );
+      if (frameIndex < cupPlayback.current.frames.length - 1) {
+        const frame = cupPlayback.current.frames[frameIndex];
         cupRef.current.position.set(frame.position.x, frame.position.y, frame.position.z);
         cupRef.current.quaternion.set(frame.quaternion.x, frame.quaternion.y, frame.quaternion.z, frame.quaternion.w);
-        cupPlayback.current.currentFrame++;
       } else {
         cupPlayback.current = null;
         isPouring.current = false;

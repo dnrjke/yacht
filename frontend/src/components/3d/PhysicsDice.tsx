@@ -75,7 +75,8 @@ export function PhysicsDice() {
   const setCurrentDiceValues = useGameStore(state => state.setCurrentDiceValues);
   const isInPlacementMode = useGameStore(state => state.isInPlacementMode);
   const diceRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const playbackData = useRef<{ frames: any[]; currentFrame: number } | null>(null);
+  const playbackData = useRef<{ frames: any[]; time: number } | null>(null);
+  const physicsAccum = useRef(0);
   const placementTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const placementAnim = useRef<{
     startTime: number;
@@ -110,7 +111,7 @@ export function PhysicsDice() {
       if (store.isWaitingForPlacement) store.setIsWaitingForPlacement(false);
       if (store.isSyncingDice) store.setIsSyncingDice(false);
 
-      playbackData.current = { frames: r.diceTrajectory, currentFrame: 0 };
+      playbackData.current = { frames: r.diceTrajectory, time: 0 };
       setCurrentDiceValues(r.finalValues);
       useGameStore.getState().incrementRollCount();
       useGameStore.getState().setCanPour(false);
@@ -124,7 +125,7 @@ export function PhysicsDice() {
     };
   }, [setCurrentDiceValues]);
 
-  useFrame(({ camera, clock }) => {
+  useFrame(({ camera, clock }, delta) => {
     const store = useGameStore.getState();
     const cam = camera as THREE.PerspectiveCamera;
 
@@ -301,17 +302,21 @@ export function PhysicsDice() {
 
     // Trajectory playback
     if (playbackData.current) {
-      const { frames, currentFrame } = playbackData.current;
+      const FRAME_DT = 1 / 60;
+      playbackData.current.time += delta;
+      const frameIndex = Math.min(
+        Math.floor(playbackData.current.time / FRAME_DT),
+        playbackData.current.frames.length - 1
+      );
 
-      if (currentFrame < frames.length) {
-        frames[currentFrame].forEach((state: any, idx: number) => {
+      if (frameIndex < playbackData.current.frames.length - 1) {
+        playbackData.current.frames[frameIndex].forEach((state: any, idx: number) => {
           const mesh = diceRefs.current[idx];
           if (mesh) {
             mesh.position.set(state.position.x, state.position.y, state.position.z);
             mesh.quaternion.set(state.quaternion.x, state.quaternion.y, state.quaternion.z, state.quaternion.w);
           }
         });
-        playbackData.current.currentFrame++;
       } else {
         playbackData.current = null;
         useGameStore.getState().setIsWaitingForPlacement(true);
@@ -332,10 +337,15 @@ export function PhysicsDice() {
       return;
     }
 
-    // Live physics: step engine and apply dice positions
+    // Live physics: fixed-rate accumulator so speed is independent of display refresh rate
+    const PHYSICS_DT = 1 / 60;
     const physics = getPhysicsEngine();
     if (physics) {
-      physics.step();
+      physicsAccum.current += Math.min(delta, 0.1);
+      while (physicsAccum.current >= PHYSICS_DT) {
+        physics.step();
+        physicsAccum.current -= PHYSICS_DT;
+      }
       const keptSet = new Set(
         store.keptDiceSlots.filter((s): s is number => s !== null)
       );
