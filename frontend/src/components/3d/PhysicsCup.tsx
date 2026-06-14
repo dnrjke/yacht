@@ -81,12 +81,12 @@ export function PhysicsCup() {
 
   useEffect(() => {
     const handleUp = () => {
-      soundManager.stopLoop('rolling_dice', 500);
-
       if (!isDragging.current || !cupRef.current) {
         isDragging.current = false;
         return;
       }
+
+      soundManager.stopLoop('rolling_dice', 500);
 
       if (canPour) {
         tryPourRef.current();
