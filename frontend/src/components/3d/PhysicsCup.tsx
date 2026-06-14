@@ -26,7 +26,7 @@ export function PhysicsCup() {
   const raycaster = useRef(new THREE.Raycaster());
   const rayTarget = useRef(new THREE.Vector3());
 
-  const cupPlayback = useRef<{ frames: any[], currentFrame: number, time: number, highRefresh: boolean } | null>(null);
+  const cupPlayback = useRef<{ frames: any[], time: number } | null>(null);
   const aiShake = useRef<{ t: number; center: THREE.Vector3; target: THREE.Vector3 } | null>(null);
 
   // 사람/AI 공용 붓기 진입점 — 성공 시 PourResult가 발행되어 재생이 시작된다
@@ -57,7 +57,7 @@ export function PhysicsCup() {
     const unsubPour = onPourResult((result) => {
       aiShake.current = null;
       isPouring.current = true;
-      cupPlayback.current = { frames: result.cupTrajectory, currentFrame: 0, time: 0, highRefresh: false };
+      cupPlayback.current = { frames: result.cupTrajectory, time: 0 };
       soundManager.stopLoop('rolling_dice', 200);
       soundManager.play('pouring_dice', { delay: POURING_DELAY_MS });
     });
@@ -109,16 +109,8 @@ export function PhysicsCup() {
       const pb = cupPlayback.current;
       const lastIdx = pb.frames.length - 1;
 
-      if (!pb.highRefresh && delta < FRAME_DT * 0.75) pb.highRefresh = true;
-
-      let fi: number;
-      if (pb.highRefresh) {
-        pb.time += delta;
-        fi = pb.time / FRAME_DT;
-      } else {
-        pb.currentFrame++;
-        fi = pb.currentFrame;
-      }
+      pb.time += Math.min(delta, FRAME_DT);
+      const fi = pb.time / FRAME_DT;
 
       if (fi < lastIdx) {
         const f0 = Math.floor(fi);
