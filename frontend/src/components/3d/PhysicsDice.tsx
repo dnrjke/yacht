@@ -28,6 +28,8 @@ const _correction = new THREE.Quaternion();
 const _localY = new THREE.Vector3(0, 1, 0);
 const _targetPos = new THREE.Vector3();
 const _targetQuat = new THREE.Quaternion();
+const _lerpQA = new THREE.Quaternion();
+const _lerpQB = new THREE.Quaternion();
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
@@ -75,7 +77,7 @@ export function PhysicsDice() {
   const setCurrentDiceValues = useGameStore(state => state.setCurrentDiceValues);
   const isInPlacementMode = useGameStore(state => state.isInPlacementMode);
   const diceRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const playbackData = useRef<{ frames: any[]; currentFrame: number; accum: number } | null>(null);
+  const playbackData = useRef<{ frames: any[]; currentFrame: number; time: number; highRefresh: boolean } | null>(null);
   const physicsAccum = useRef(0);
   const placementTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const placementAnim = useRef<{
@@ -111,7 +113,7 @@ export function PhysicsDice() {
       if (store.isWaitingForPlacement) store.setIsWaitingForPlacement(false);
       if (store.isSyncingDice) store.setIsSyncingDice(false);
 
-      playbackData.current = { frames: r.diceTrajectory, currentFrame: 0, accum: 0 };
+      playbackData.current = { frames: r.diceTrajectory, currentFrame: 0, time: 0, highRefresh: false };
       setCurrentDiceValues(r.finalValues);
       useGameStore.getState().incrementRollCount();
       useGameStore.getState().setCanPour(false);
@@ -304,19 +306,38 @@ export function PhysicsDice() {
     if (playbackData.current) {
       const FRAME_DT = 1 / 60;
       const pb = playbackData.current;
-      pb.accum += delta;
-      if (pb.accum >= FRAME_DT) {
-        pb.accum = 0;
+      const lastIdx = pb.frames.length - 1;
+
+      if (!pb.highRefresh && delta < FRAME_DT * 0.75) pb.highRefresh = true;
+
+      let fi: number;
+      if (pb.highRefresh) {
+        pb.time += delta;
+        fi = pb.time / FRAME_DT;
+      } else {
         pb.currentFrame++;
+        fi = pb.currentFrame;
       }
 
-      if (pb.currentFrame < pb.frames.length) {
-        pb.frames[pb.currentFrame].forEach((state: any, idx: number) => {
+      if (fi < lastIdx) {
+        const f0 = Math.floor(fi);
+        const f1 = f0 + 1;
+        const alpha = fi - f0;
+        const frameA = pb.frames[f0];
+        const frameB = pb.frames[f1];
+        frameA.forEach((stateA: any, idx: number) => {
           const mesh = diceRefs.current[idx];
-          if (mesh) {
-            mesh.position.set(state.position.x, state.position.y, state.position.z);
-            mesh.quaternion.set(state.quaternion.x, state.quaternion.y, state.quaternion.z, state.quaternion.w);
-          }
+          if (!mesh) return;
+          const stateB = frameB[idx];
+          mesh.position.set(
+            stateA.position.x + (stateB.position.x - stateA.position.x) * alpha,
+            stateA.position.y + (stateB.position.y - stateA.position.y) * alpha,
+            stateA.position.z + (stateB.position.z - stateA.position.z) * alpha,
+          );
+          _lerpQA.set(stateA.quaternion.x, stateA.quaternion.y, stateA.quaternion.z, stateA.quaternion.w);
+          _lerpQB.set(stateB.quaternion.x, stateB.quaternion.y, stateB.quaternion.z, stateB.quaternion.w);
+          _lerpQA.slerp(_lerpQB, alpha);
+          mesh.quaternion.copy(_lerpQA);
         });
       } else {
         playbackData.current = null;

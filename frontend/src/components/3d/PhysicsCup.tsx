@@ -12,6 +12,9 @@ const POURING_DELAY_MS = 1000;
 const AI_SHAKE_DURATION = 1.1;
 const AI_SHAKE_TIMEOUT = 5;
 
+const _slerp = new THREE.Quaternion();
+const _slerpB = new THREE.Quaternion();
+
 export function PhysicsCup() {
   const cupRef = useRef<THREE.Group>(null);
   const isDragging = useRef(false);
@@ -23,7 +26,7 @@ export function PhysicsCup() {
   const raycaster = useRef(new THREE.Raycaster());
   const rayTarget = useRef(new THREE.Vector3());
 
-  const cupPlayback = useRef<{ frames: any[], currentFrame: number, accum: number } | null>(null);
+  const cupPlayback = useRef<{ frames: any[], currentFrame: number, time: number, highRefresh: boolean } | null>(null);
   const aiShake = useRef<{ t: number; center: THREE.Vector3; target: THREE.Vector3 } | null>(null);
 
   // 사람/AI 공용 붓기 진입점 — 성공 시 PourResult가 발행되어 재생이 시작된다
@@ -54,7 +57,7 @@ export function PhysicsCup() {
     const unsubPour = onPourResult((result) => {
       aiShake.current = null;
       isPouring.current = true;
-      cupPlayback.current = { frames: result.cupTrajectory, currentFrame: 0, accum: 0 };
+      cupPlayback.current = { frames: result.cupTrajectory, currentFrame: 0, time: 0, highRefresh: false };
       soundManager.stopLoop('rolling_dice', 200);
       soundManager.play('pouring_dice', { delay: POURING_DELAY_MS });
     });
@@ -104,15 +107,34 @@ export function PhysicsCup() {
     if (cupPlayback.current) {
       const FRAME_DT = 1 / 60;
       const pb = cupPlayback.current;
-      pb.accum += delta;
-      if (pb.accum >= FRAME_DT) {
-        pb.accum = 0;
+      const lastIdx = pb.frames.length - 1;
+
+      if (!pb.highRefresh && delta < FRAME_DT * 0.75) pb.highRefresh = true;
+
+      let fi: number;
+      if (pb.highRefresh) {
+        pb.time += delta;
+        fi = pb.time / FRAME_DT;
+      } else {
         pb.currentFrame++;
+        fi = pb.currentFrame;
       }
-      if (pb.currentFrame < pb.frames.length) {
-        const frame = pb.frames[pb.currentFrame];
-        cupRef.current.position.set(frame.position.x, frame.position.y, frame.position.z);
-        cupRef.current.quaternion.set(frame.quaternion.x, frame.quaternion.y, frame.quaternion.z, frame.quaternion.w);
+
+      if (fi < lastIdx) {
+        const f0 = Math.floor(fi);
+        const f1 = f0 + 1;
+        const alpha = fi - f0;
+        const a = pb.frames[f0];
+        const b = pb.frames[f1];
+        cupRef.current.position.set(
+          a.position.x + (b.position.x - a.position.x) * alpha,
+          a.position.y + (b.position.y - a.position.y) * alpha,
+          a.position.z + (b.position.z - a.position.z) * alpha,
+        );
+        _slerp.set(a.quaternion.x, a.quaternion.y, a.quaternion.z, a.quaternion.w);
+        _slerpB.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+        _slerp.slerp(_slerpB, alpha);
+        cupRef.current.quaternion.copy(_slerp);
       } else {
         cupPlayback.current = null;
         isPouring.current = false;
