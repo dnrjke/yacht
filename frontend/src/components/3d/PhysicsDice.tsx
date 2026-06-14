@@ -75,7 +75,7 @@ export function PhysicsDice() {
   const setCurrentDiceValues = useGameStore(state => state.setCurrentDiceValues);
   const isInPlacementMode = useGameStore(state => state.isInPlacementMode);
   const diceRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const playbackData = useRef<{ frames: any[]; time: number } | null>(null);
+  const playbackData = useRef<{ frames: any[]; currentFrame: number; accum: number } | null>(null);
   const physicsAccum = useRef(0);
   const placementTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const placementAnim = useRef<{
@@ -111,7 +111,7 @@ export function PhysicsDice() {
       if (store.isWaitingForPlacement) store.setIsWaitingForPlacement(false);
       if (store.isSyncingDice) store.setIsSyncingDice(false);
 
-      playbackData.current = { frames: r.diceTrajectory, time: 0 };
+      playbackData.current = { frames: r.diceTrajectory, currentFrame: 0, accum: 0 };
       setCurrentDiceValues(r.finalValues);
       useGameStore.getState().incrementRollCount();
       useGameStore.getState().setCanPour(false);
@@ -303,14 +303,15 @@ export function PhysicsDice() {
     // Trajectory playback
     if (playbackData.current) {
       const FRAME_DT = 1 / 60;
-      playbackData.current.time += delta;
-      const frameIndex = Math.min(
-        Math.floor(playbackData.current.time / FRAME_DT),
-        playbackData.current.frames.length - 1
-      );
+      const pb = playbackData.current;
+      pb.accum += delta;
+      if (pb.accum >= FRAME_DT) {
+        pb.accum = 0;
+        pb.currentFrame++;
+      }
 
-      if (frameIndex < playbackData.current.frames.length - 1) {
-        playbackData.current.frames[frameIndex].forEach((state: any, idx: number) => {
+      if (pb.currentFrame < pb.frames.length) {
+        pb.frames[pb.currentFrame].forEach((state: any, idx: number) => {
           const mesh = diceRefs.current[idx];
           if (mesh) {
             mesh.position.set(state.position.x, state.position.y, state.position.z);

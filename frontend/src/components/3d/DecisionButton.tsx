@@ -80,9 +80,10 @@ export function DecisionButton() {
     meshRef.current.position.copy(_center)
       .addScaledVector(_up, -visibleHeight * 0.30);
 
-    // Scale button: 20% of visible width, height follows 4:1 texture aspect
-    const btnW = visibleWidth * 0.20;
-    const btnH = btnW / 4; // matches texture ratio 320:80
+    // Scale button: 20% of visible width (40% on mobile portrait), height follows 4:1 texture aspect
+    const mobileFactor = cam.aspect < 1 ? 2 : 1;
+    const btnW = visibleWidth * 0.20 * mobileFactor;
+    const btnH = btnW / 4;
     meshRef.current.scale.set(btnW, btnH, 1);
 
     // Billboard
