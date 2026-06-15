@@ -5,6 +5,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { BOARD_CONSTANTS } from '@yacht/core';
 import { RoomManager, Room, PlayerSlot } from './RoomManager';
+import { GameActions } from './GameActions';
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ const PORT = process.env.PORT || 3001;
 const GRACE_PERIOD_MS = 30_000;
 
 const roomManager = new RoomManager();
+const roomActionsMap = new Map<string, GameActions>();
 
 // Rate limiting per socket
 const socketRateMap = new Map<string, { game: number[]; shake: number[] }>();
@@ -55,21 +57,24 @@ function validateShakeState(data: any): boolean {
   return true;
 }
 
-function getSocketContext(socket: Socket): { room: Room; slot: PlayerSlot; role: 'p1' | 'p2' } | null {
-  const roomId = (socket as any)._roomId as string | undefined;
-  if (!roomId) return null;
-  const room = roomManager.getRoom(roomId);
-  if (!room) return null;
-  const slot = roomManager.getPlayerBySocketId(room, socket.id);
-  if (!slot) return null;
-  const role = roomManager.getPlayerRole(room, slot.playerId);
-  if (!role) return null;
-  return { room, slot, role };
+const BOUND_EVENTS = [
+  'CUP_SHAKE_STATE', 'POUR_CUP', 'KEEP_DIE', 'UNKEEP_DIE',
+  'REROLL', 'COLLECTION_DONE', 'SUBMIT_SCORE', 'REQUEST_REMATCH', 'disconnect',
+];
+
+function unbindGameEvents(socket: Socket): void {
+  for (const event of BOUND_EVENTS) {
+    socket.removeAllListeners(event);
+  }
 }
 
 function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
+  unbindGameEvents(socket);
+
   const role = roomManager.getPlayerRole(room, slot.playerId)!;
   (socket as any)._roomId = room.id;
+
+  const gameActions = roomActionsMap.get(room.id)!;
 
   socket.on('CUP_SHAKE_STATE', (data: any) => {
     if (!checkRateLimit(socket.id, 'shake')) return;
@@ -83,112 +88,34 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
     }
   });
 
-  socket.on('POUR_CUP', (data: { position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } }) => {
+  socket.on('POUR_CUP', (data: any) => {
     if (!checkRateLimit(socket.id, 'game')) return;
-
-    const err = room.state.validatePour(role);
-    if (err) {
-      socket.emit('POUR_REJECTED', { reason: err });
-      return;
-    }
-
-    room.state.turnPhase = 'simulating';
-    room.state.isSimulating = true;
-    room.state.canPour = false;
-
-    room.physics.updateCupTransform(data.position, data.quaternion);
-    room.physics.step();
-    const result = room.physics.simulatePour(data.position, data.quaternion);
-
-    room.state.rollCount++;
-    room.state.currentDiceValues = result.finalValues;
-    room.state.isSimulating = false;
-    room.state.turnPhase = 'placement';
-
-    io.to(room.id).emit('POUR_RESULT', {
-      ...result,
-      rollCount: room.state.rollCount,
-    });
+    gameActions.handleFromSocket(role, 'POUR_CUP', data, socket);
   });
 
-  socket.on('KEEP_DIE', (data: { dieIndex: number }) => {
+  socket.on('KEEP_DIE', (data: any) => {
     if (!checkRateLimit(socket.id, 'game')) return;
-    if (!room.state.validateKeep(role, data.dieIndex)) return;
-    if (room.state.keptDiceSlots.includes(data.dieIndex)) return;
-
-    room.state.applyKeep(data.dieIndex);
-    io.to(room.id).emit('KEPT_UPDATE', { keptDiceSlots: room.state.keptDiceSlots });
+    gameActions.handleFromSocket(role, 'KEEP_DIE', data, socket);
   });
 
-  socket.on('UNKEEP_DIE', (data: { dieIndex: number }) => {
+  socket.on('UNKEEP_DIE', (data: any) => {
     if (!checkRateLimit(socket.id, 'game')) return;
-    if (!room.state.validateKeep(role, data.dieIndex)) return;
-    if (!room.state.keptDiceSlots.includes(data.dieIndex)) return;
-
-    room.state.applyUnkeep(data.dieIndex);
-    io.to(room.id).emit('KEPT_UPDATE', { keptDiceSlots: room.state.keptDiceSlots });
+    gameActions.handleFromSocket(role, 'UNKEEP_DIE', data, socket);
   });
 
   socket.on('REROLL', () => {
     if (!checkRateLimit(socket.id, 'game')) return;
-
-    const err = room.state.validateReroll(role);
-    if (err) {
-      socket.emit('REROLL_REJECTED');
-      return;
-    }
-
-    room.state.turnPhase = 'collecting';
-    io.to(room.id).emit('COLLECT_TO_CUP', { keptIndices: room.state.keptDiceSlots });
+    gameActions.handleFromSocket(role, 'REROLL', {}, socket);
   });
 
   socket.on('COLLECTION_DONE', () => {
-    if (room.state.currentTurn !== role) return;
-    if (room.state.turnPhase !== 'collecting') return;
-
-    room.physics.spawnNonKeptDiceInCup(room.state.keptDiceSlots);
-    room.state.turnPhase = 'waiting_pour';
-    room.state.canPour = true;
-
-    io.to(room.id).emit('CAN_POUR');
+    if (!checkRateLimit(socket.id, 'game')) return;
+    gameActions.handleFromSocket(role, 'COLLECTION_DONE', {}, socket);
   });
 
-  socket.on('SUBMIT_SCORE', (data: { category: string }) => {
+  socket.on('SUBMIT_SCORE', (data: any) => {
     if (!checkRateLimit(socket.id, 'game')) return;
-
-    const err = room.state.validateSubmitScore(role, data.category);
-    if (err) return;
-
-    room.state.turnPhase = 'scoring';
-    const { value, gameOver } = room.state.applyScore(role, data.category);
-
-    if (gameOver) {
-      const winner = room.state.getWinner();
-      io.to(room.id).emit('SCORE_CONFIRMED', {
-        player: role,
-        category: data.category,
-        value,
-        scores: room.state.scores,
-        nextTurn: room.state.currentTurn,
-      });
-      io.to(room.id).emit('GAME_OVER', {
-        scores: room.state.scores,
-        winner,
-      });
-    } else {
-      room.state.advanceTurn();
-      room.physics.spawnDiceInCup();
-      room.state.canPour = true;
-
-      io.to(room.id).emit('SCORE_CONFIRMED', {
-        player: role,
-        category: data.category,
-        value,
-        scores: room.state.scores,
-        nextTurn: room.state.currentTurn,
-      });
-      io.to(room.id).emit('CAN_POUR');
-    }
+    gameActions.handleFromSocket(role, 'SUBMIT_SCORE', data, socket);
   });
 
   socket.on('REQUEST_REMATCH', () => {
@@ -224,12 +151,12 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
       });
     }
 
-    // If both disconnected or room has only 1 player waiting, start cleanup timer
     room.disconnectTimer = setTimeout(() => {
       if (!slot.connected) {
         if (opponent?.socketId && opponent.connected) {
           io.to(opponent.socketId).emit('OPPONENT_TIMEOUT');
         }
+        roomActionsMap.delete(room.id);
         roomManager.destroyRoom(room.id);
         console.log(`Room ${room.id} destroyed (disconnect timeout)`);
       }
@@ -271,13 +198,15 @@ io.on('connection', (socket) => {
 
     socket.join(room.id);
 
+    const gameActions = new GameActions(room, io);
+    roomActionsMap.set(room.id, gameActions);
+
     room.physics.spawnDiceInCup();
     room.state.canPour = true;
 
     const p1 = room.players[0];
     const p2 = room.players[1];
 
-    // Notify both players
     if (p1.socketId) {
       io.to(p1.socketId).emit('GAME_START', {
         players: [{ name: p1.name }, { name: p2.name }],
@@ -291,7 +220,6 @@ io.on('connection', (socket) => {
       });
     }
 
-    // Bind game events for both sockets
     const p1Socket = p1.socketId ? io.sockets.sockets.get(p1.socketId) : null;
     const p2Socket = p2.socketId ? io.sockets.sockets.get(p2.socketId) : null;
     if (p1Socket) bindGameEvents(p1Socket, room, p1);

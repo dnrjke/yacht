@@ -1,25 +1,25 @@
-import { Server } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import { Room } from './RoomManager';
 
 export class GameActions {
   constructor(private room: Room, private io: Server) {}
 
-  handleFromSocket(playerRole: 'p1' | 'p2', event: string, data: any): void {
-    this.execute(playerRole, event, data);
+  handleFromSocket(playerRole: 'p1' | 'p2', event: string, data: any, socket: Socket): void {
+    this.execute(playerRole, event, data, socket);
   }
 
   handleFromAutoPlay(playerRole: 'p1' | 'p2', event: string, data: any): void {
-    this.execute(playerRole, event, data);
+    this.execute(playerRole, event, data, null);
   }
 
-  private execute(playerRole: 'p1' | 'p2', event: string, data: any): void {
+  private execute(playerRole: 'p1' | 'p2', event: string, data: any, socket: Socket | null): void {
     const state = this.room.state;
     if (state.currentTurn !== playerRole) return;
     if (!state.isEventAllowed(event)) return;
 
     switch (event) {
       case 'POUR_CUP':
-        this.handlePour(playerRole, data);
+        this.handlePour(playerRole, data, socket);
         break;
       case 'KEEP_DIE':
         this.handleKeep(playerRole, data.dieIndex);
@@ -28,7 +28,7 @@ export class GameActions {
         this.handleUnkeep(playerRole, data.dieIndex);
         break;
       case 'REROLL':
-        this.handleReroll(playerRole);
+        this.handleReroll(playerRole, socket);
         break;
       case 'SUBMIT_SCORE':
         this.handleSubmitScore(playerRole, data.category);
@@ -39,10 +39,13 @@ export class GameActions {
     }
   }
 
-  private handlePour(playerRole: 'p1' | 'p2', data: { position: any; quaternion: any }): void {
+  private handlePour(playerRole: 'p1' | 'p2', data: { position: any; quaternion: any }, socket: Socket | null): void {
     const state = this.room.state;
     const err = state.validatePour(playerRole);
-    if (err) return;
+    if (err) {
+      socket?.emit('POUR_REJECTED', { reason: err });
+      return;
+    }
 
     state.turnPhase = 'simulating';
     state.isSimulating = true;
@@ -77,9 +80,12 @@ export class GameActions {
     this.io.to(this.room.id).emit('KEPT_UPDATE', { keptDiceSlots: this.room.state.keptDiceSlots });
   }
 
-  private handleReroll(playerRole: 'p1' | 'p2'): void {
+  private handleReroll(playerRole: 'p1' | 'p2', socket: Socket | null): void {
     const err = this.room.state.validateReroll(playerRole);
-    if (err) return;
+    if (err) {
+      socket?.emit('REROLL_REJECTED');
+      return;
+    }
     this.room.state.turnPhase = 'collecting';
     this.io.to(this.room.id).emit('COLLECT_TO_CUP', { keptIndices: this.room.state.keptDiceSlots });
   }
