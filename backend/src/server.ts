@@ -163,7 +163,10 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
   });
 
   socket.on('POUR_CUP', (data: any) => {
-    if (!checkRateLimit(socket.id, 'game')) return;
+    if (!checkRateLimit(socket.id, 'game')) {
+      socket.emit('POUR_REJECTED', { reason: 'rate_limited' });
+      return;
+    }
     tryResumeAutoPlay(room);
     gameActions.handleFromSocket(role, 'POUR_CUP', data, socket);
     resetTurnTimerForPlayer(room, role);

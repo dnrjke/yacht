@@ -18,9 +18,18 @@ export class GameActions {
 
   private execute(playerRole: 'p1' | 'p2', event: string, data: any, socket: Socket | null): void {
     const state = this.room.state;
-    if (state.currentTurn !== playerRole) return;
-    if (!state.isEventAllowed(event)) return;
-    if (!state.validateTurnContext(data?.turnNumber)) return;
+    if (state.currentTurn !== playerRole) {
+      this.rejectPourIfNeeded(event, socket, 'not_your_turn');
+      return;
+    }
+    if (!state.isEventAllowed(event)) {
+      this.rejectPourIfNeeded(event, socket, 'wrong_phase');
+      return;
+    }
+    if (!state.validateTurnContext(data?.turnNumber)) {
+      this.rejectPourIfNeeded(event, socket, 'stale_turn');
+      return;
+    }
 
     switch (event) {
       case 'POUR_CUP':
@@ -41,6 +50,12 @@ export class GameActions {
       case 'COLLECTION_DONE':
         this.handleCollectionDone(playerRole);
         break;
+    }
+  }
+
+  private rejectPourIfNeeded(event: string, socket: Socket | null, reason: string): void {
+    if (event === 'POUR_CUP') {
+      socket?.emit('POUR_REJECTED', { reason });
     }
   }
 

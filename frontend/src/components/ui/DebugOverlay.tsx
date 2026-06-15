@@ -48,6 +48,8 @@ function buildSnapshot() {
     copiedAt,
     turn: s.currentTurn,
     myRole: s.myRole,
+    onlineTurnNumber: s.onlineTurnNumber,
+    onlineRollId: s.onlineRollId,
     rollCount: s.rollCount,
     turnPhase: getTurnPhase(s),
     canPour: s.canPour,

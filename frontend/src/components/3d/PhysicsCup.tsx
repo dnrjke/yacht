@@ -5,6 +5,7 @@ import { soundManager } from '../../utils/soundManager';
 import { getPhysicsEngine, emitPourResult, onPourResult, onAiPour } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
 import { interpolateShake, isShakeActive } from '../../network/shakeBuffer';
+import { pushDebugLog } from '../ui/DebugOverlay';
 import * as THREE from 'three';
 import { BOARD_CONSTANTS } from '@yacht/core';
 
@@ -144,6 +145,20 @@ export function PhysicsCup() {
               position: { x: cupRef.current!.position.x, y: cupRef.current!.position.y, z: cupRef.current!.position.z },
               quaternion: { x: cupRef.current!.quaternion.x, y: cupRef.current!.quaternion.y, z: cupRef.current!.quaternion.z, w: cupRef.current!.quaternion.w },
             });
+            pushDebugLog('POUR_CUP_EMIT', {
+              turnNumber: s.onlineTurnNumber,
+              rollId: s.onlineRollId,
+              connected: s.isConnected,
+              pos: {
+                x: +cupRef.current!.position.x.toFixed(2),
+                y: +cupRef.current!.position.y.toFixed(2),
+                z: +cupRef.current!.position.z.toFixed(2),
+              },
+            });
+          } else {
+            anticipation.current = null;
+            s.setCanPour(true);
+            pushDebugLog('POUR_CUP_BLOCKED', { reason: 'missing_socket' });
           }
         } else {
           tryPourRef.current();
