@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { getPhysicsEngine } from '../../physics/physicsEngine';
+import { getRenderedDiceDebugSnapshot } from '../3d/PhysicsDice';
 
 interface LogEntry {
   time: number;
@@ -38,9 +39,12 @@ function buildSnapshot() {
   const s = useGameStore.getState();
   const physics = getPhysicsEngine();
   const diceStates = physics?.getDiceStates() ?? [];
+  const copiedAt = Date.now();
+  const renderedDice = getRenderedDiceDebugSnapshot();
 
   const snap: Record<string, unknown> = {
-    ts: new Date().toISOString(),
+    ts: new Date(copiedAt).toISOString(),
+    copiedAt,
     turn: s.currentTurn,
     myRole: s.myRole,
     rollCount: s.rollCount,
@@ -75,6 +79,13 @@ function buildSnapshot() {
     snap.diceInCup = physics.diceInCup;
     snap.keptDice = physics.keptDice;
     snap.physicsValues = physics.currentDiceValues;
+  }
+
+  if (renderedDice) {
+    snap.renderedDice = {
+      ...renderedDice,
+      ageMs: copiedAt - renderedDice.updatedAt,
+    };
   }
 
   return snap;
@@ -146,6 +157,7 @@ export function DebugOverlay() {
   const s = useGameStore.getState();
   const physics = getPhysicsEngine();
   const diceStates = physics?.getDiceStates() ?? [];
+  const renderedDice = getRenderedDiceDebugSnapshot();
   const phase = getTurnPhase(s);
 
   return (
@@ -193,6 +205,8 @@ export function DebugOverlay() {
       <Section title="Dice Values">
         <Row label="store" value={fmt(s.currentDiceValues)} />
         {physics && <Row label="physics" value={fmt(physics.currentDiceValues)} />}
+        {renderedDice && <Row label="renderTop" value={fmt(renderedDice.topValues)} />}
+        {renderedDice && <Row label="renderAge" value={`${Date.now() - renderedDice.updatedAt}ms`} />}
         <Row label="keptSlots" value={fmt(s.keptDiceSlots)} />
       </Section>
 

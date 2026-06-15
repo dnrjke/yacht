@@ -345,6 +345,47 @@ export class PhysicsWorld {
     });
   }
 
+  resetCupToRest(): void {
+    const { CUP_REST_X, CUP_REST_Y, CUP_REST_Z } = BOARD_CONSTANTS;
+    const cupRotation = { x: 0, y: 0, z: 0, w: 1 };
+
+    this.setCupCollidersEnabled(true);
+    this.setBorderWallsEnabled(false);
+
+    this.cupBody.setTranslation({ x: CUP_REST_X, y: CUP_REST_Y, z: CUP_REST_Z }, true);
+    this.cupBody.setRotation(cupRotation, true);
+    this.cupBody.setNextKinematicTranslation({ x: CUP_REST_X, y: CUP_REST_Y, z: CUP_REST_Z });
+    this.cupBody.setNextKinematicRotation(cupRotation);
+
+    this.cupLidBody.setTranslation({ x: CUP_REST_X, y: CUP_REST_Y + 4.5, z: CUP_REST_Z }, true);
+    this.cupLidBody.setRotation(cupRotation, true);
+    this.cupLidBody.setNextKinematicTranslation({ x: CUP_REST_X, y: CUP_REST_Y + 4.5, z: CUP_REST_Z });
+    this.cupLidBody.setNextKinematicRotation(cupRotation);
+
+    this.pendingCupPos = null;
+    this.pendingCupQuat = null;
+  }
+
+  applyAuthoritativePourResult(result: PourResult): void {
+    const finalFrame = result.diceTrajectory[result.diceTrajectory.length - 1];
+    if (finalFrame) {
+      finalFrame.forEach((state, i) => {
+        const dice = this.diceBodies[i];
+        if (!dice) return;
+        dice.setBodyType(this.keptDice[i] ? RAPIER.RigidBodyType.Fixed : RAPIER.RigidBodyType.Dynamic, true);
+        dice.setTranslation(state.position, true);
+        dice.setRotation(state.quaternion, true);
+        dice.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        dice.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        dice.lockRotations(false, true);
+      });
+    }
+
+    this.currentDiceValues = [...result.finalValues];
+    this.diceInCup = [false, false, false, false, false];
+    this.resetCupToRest();
+  }
+
   reconcileDiceInCupPositions(): void {
     const cupPos = this.cupBody.translation();
     let cupSlot = 0;

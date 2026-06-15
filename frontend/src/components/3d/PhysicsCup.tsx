@@ -22,6 +22,7 @@ const _anticipationStartQuat = new THREE.Quaternion();
 const _anticipationTargetQuat = new THREE.Quaternion();
 const _anticipationTilt = new THREE.Quaternion();
 const _anticipationAxis = new THREE.Vector3();
+const _cupRestPos = new THREE.Vector3(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
 
 export function PhysicsCup() {
   const cupRef = useRef<THREE.Group>(null);
@@ -249,6 +250,9 @@ export function PhysicsCup() {
         opponentShakeSound.current = false;
         soundManager.stopLoop('rolling_dice', 200);
       }
+
+      cupRef.current.position.lerp(_cupRestPos, Math.min(1, delta * 8));
+      cupRef.current.quaternion.slerp(_slerp.set(0, 0, 0, 1), Math.min(1, delta * 8));
       return;
     }
 

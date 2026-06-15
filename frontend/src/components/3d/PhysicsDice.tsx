@@ -32,8 +32,68 @@ const _targetPos = new THREE.Vector3();
 const _targetQuat = new THREE.Quaternion();
 const _lerpQA = new THREE.Quaternion();
 const _lerpQB = new THREE.Quaternion();
+const _renderedFaceNormal = new THREE.Vector3();
+const _cameraDir = new THREE.Vector3();
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+interface RenderedDiceDebugSnapshot {
+  updatedAt: number;
+  updatedAtIso: string;
+  positions: Array<{ x: number; y: number; z: number }>;
+  quaternions: Array<{ x: number; y: number; z: number; w: number }>;
+  topValues: number[];
+  cameraValues: number[];
+}
+
+let renderedDiceDebugSnapshot: RenderedDiceDebugSnapshot | null = null;
+
+export function getRenderedDiceDebugSnapshot(): RenderedDiceDebugSnapshot | null {
+  return renderedDiceDebugSnapshot;
+}
+
+function detectFaceValue(meshQuat: THREE.Quaternion, direction: THREE.Vector3): number {
+  let bestValue = 1;
+  let bestDot = -Infinity;
+
+  for (const [rawValue, localNormal] of Object.entries(FACE_NORMALS)) {
+    _renderedFaceNormal.copy(localNormal).applyQuaternion(meshQuat);
+    const dot = _renderedFaceNormal.dot(direction);
+    if (dot > bestDot) {
+      bestDot = dot;
+      bestValue = Number(rawValue);
+    }
+  }
+
+  return bestValue;
+}
+
+function updateRenderedDiceDebugSnapshot(
+  diceRefs: { current: (THREE.Mesh | null)[] },
+  camera: THREE.Camera,
+): void {
+  camera.getWorldDirection(_cameraDir);
+  _cameraDir.multiplyScalar(-1);
+  const updatedAt = Date.now();
+
+  renderedDiceDebugSnapshot = {
+    updatedAt,
+    updatedAtIso: new Date(updatedAt).toISOString(),
+    positions: diceRefs.current.map(mesh => ({
+      x: mesh ? +mesh.position.x.toFixed(2) : 0,
+      y: mesh ? +mesh.position.y.toFixed(2) : 0,
+      z: mesh ? +mesh.position.z.toFixed(2) : 0,
+    })),
+    quaternions: diceRefs.current.map(mesh => ({
+      x: mesh ? +mesh.quaternion.x.toFixed(3) : 0,
+      y: mesh ? +mesh.quaternion.y.toFixed(3) : 0,
+      z: mesh ? +mesh.quaternion.z.toFixed(3) : 0,
+      w: mesh ? +mesh.quaternion.w.toFixed(3) : 1,
+    })),
+    topValues: diceRefs.current.map(mesh => mesh ? detectFaceValue(mesh.quaternion, UP_VECTOR) : 1),
+    cameraValues: diceRefs.current.map(mesh => mesh ? detectFaceValue(mesh.quaternion, _cameraDir) : 1),
+  };
+}
 
 function createDiceTexture(value: number) {
   const canvas = document.createElement('canvas');
@@ -125,8 +185,7 @@ export function PhysicsDice() {
 
       const physics = getPhysicsEngine();
       if (physics && s.gameMode === 'online') {
-        physics.currentDiceValues = r.finalValues;
-        physics.diceInCup = [false, false, false, false, false];
+        physics.applyAuthoritativePourResult(r);
       }
     };
 
@@ -232,6 +291,7 @@ export function PhysicsDice() {
         mesh.scale.setScalar(startScale + (1 - startScale) * t);
       });
 
+      updateRenderedDiceDebugSnapshot(diceRefs, camera);
       return;
     }
 
@@ -304,6 +364,7 @@ export function PhysicsDice() {
         if (store.gameMode === 'online') {
           const physics = getPhysicsEngine();
           if (physics) {
+            physics.resetCupToRest();
             if (store.returnReason === 'turnEnd') {
               physics.spawnNonKeptDiceInCup([null, null, null, null, null]);
             } else {
@@ -327,6 +388,7 @@ export function PhysicsDice() {
           store.setCanPour(true);
         }
       }
+      updateRenderedDiceDebugSnapshot(diceRefs, camera);
       return;
     }
     if (returnAnim.current) returnAnim.current = null;
@@ -382,6 +444,7 @@ export function PhysicsDice() {
           s.setIsInPlacementMode(true);
         }, 400);
       }
+      updateRenderedDiceDebugSnapshot(diceRefs, camera);
       return;
     }
 
@@ -397,6 +460,7 @@ export function PhysicsDice() {
           }
         });
       }
+      updateRenderedDiceDebugSnapshot(diceRefs, camera);
       return;
     }
 
@@ -421,6 +485,7 @@ export function PhysicsDice() {
           mesh.quaternion.set(state.quaternion.x, state.quaternion.y, state.quaternion.z, state.quaternion.w);
         }
       });
+      updateRenderedDiceDebugSnapshot(diceRefs, camera);
     }
   });
 
