@@ -10,6 +10,7 @@ interface LogEntry {
 }
 
 const MAX_LOG = 50;
+const DEBUG_SCHEMA = 'online-pour-debug-v2';
 
 let logBuffer: LogEntry[] = [];
 let logSeq = 0;
@@ -44,6 +45,7 @@ function buildSnapshot() {
   const dicePlayback = getDicePlaybackDebugSnapshot();
 
   const snap: Record<string, unknown> = {
+    debugSchema: DEBUG_SCHEMA,
     ts: new Date(copiedAt).toISOString(),
     copiedAt,
     turn: s.currentTurn,
@@ -204,6 +206,7 @@ export function DebugOverlay() {
       </div>
 
       <Section title="State">
+        <Row label="debugSchema" value={DEBUG_SCHEMA} />
         <Row label="turn" value={`${s.currentTurn} (me: ${s.myRole})`} />
         <Row label="roll" value={`${s.rollCount}/3`} />
         <Row label="phase" value={phase} />

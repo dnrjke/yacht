@@ -122,12 +122,27 @@ export function PhysicsCup() {
 
       soundManager.stopLoop('rolling_dice', 500);
 
+      const s = useGameStore.getState();
+      const sock = getSocket();
+      pushDebugLog('POUR_POINTER_UP', {
+        canPourHook: canPour,
+        storeCanPour: s.canPour,
+        gameMode: s.gameMode,
+        connected: s.isConnected,
+        hasSocket: Boolean(sock),
+        turnNumber: s.onlineTurnNumber,
+        rollId: s.onlineRollId,
+        pos: {
+          x: +cupRef.current.position.x.toFixed(2),
+          y: +cupRef.current.position.y.toFixed(2),
+          z: +cupRef.current.position.z.toFixed(2),
+        },
+      });
+
       if (canPour) {
-        const s = useGameStore.getState();
         if (s.gameMode === 'online') {
           s.setCanPour(false);
           anticipation.current = createOnlineAnticipation(cupRef.current);
-          const sock = getSocket();
           if (sock) {
             const physics = getPhysicsEngine();
             if (physics) {
