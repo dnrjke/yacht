@@ -601,7 +601,7 @@ export class PhysicsWorld {
     const corrDx = clampedPosition.x - cupPosition.x;
     const corrDz = clampedPosition.z - cupPosition.z;
     const corrDist = needsCorrection ? Math.sqrt(corrDx * corrDx + corrDz * corrDz) : 0;
-    const INSTANT_CORRECTION_THRESHOLD = 3;
+    const INSTANT_CORRECTION_THRESHOLD = Number.POSITIVE_INFINITY;
 
     const effectivePos = corrDist > INSTANT_CORRECTION_THRESHOLD ? clampedPosition : cupPosition;
     if (corrDist > INSTANT_CORRECTION_THRESHOLD) {

@@ -232,11 +232,6 @@ export function PhysicsCup() {
               },
             });
             if (physics) {
-              physics.updateCupTransform(
-                { x: cupRef.current!.position.x, y: cupRef.current!.position.y, z: cupRef.current!.position.z },
-                { x: cupRef.current!.quaternion.x, y: cupRef.current!.quaternion.y, z: cupRef.current!.quaternion.z, w: cupRef.current!.quaternion.w },
-              );
-              physics.step();
               physics.reconcileDiceInCupPositions();
               if (physics.allDiceReadyToPour()) {
                 const previewStartedAt = Date.now();
