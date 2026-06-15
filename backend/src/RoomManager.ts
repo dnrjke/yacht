@@ -17,6 +17,7 @@ export interface Room {
   physics: PhysicsWorld;
   state: ServerGameState;
   disconnectTimer: ReturnType<typeof setTimeout> | null;
+  idleTimer: ReturnType<typeof setTimeout> | null;
   rematchFlags: { p1: boolean; p2: boolean };
 }
 
@@ -83,6 +84,7 @@ export class RoomManager {
       physics,
       state: new ServerGameState(),
       disconnectTimer: null,
+      idleTimer: null,
       rematchFlags: { p1: false, p2: false },
     };
 
@@ -113,6 +115,9 @@ export class RoomManager {
 
     if (room.disconnectTimer) {
       clearTimeout(room.disconnectTimer);
+    }
+    if (room.idleTimer) {
+      clearTimeout(room.idleTimer);
     }
 
     room.physics.world.free();

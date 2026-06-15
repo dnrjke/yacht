@@ -2,6 +2,9 @@ import { Server, Socket } from 'socket.io';
 import { Room } from './RoomManager';
 
 export class GameActions {
+  onTurnAdvanced: (() => void) | null = null;
+  onGameFinished: (() => void) | null = null;
+
   constructor(private room: Room, private io: Server) {}
 
   handleFromSocket(playerRole: 'p1' | 'p2', event: string, data: any, socket: Socket): void {
@@ -121,6 +124,7 @@ export class GameActions {
         scores: state.scores,
         winner,
       });
+      this.onGameFinished?.();
     } else {
       state.advanceTurn();
       this.room.physics.spawnDiceInCup();
@@ -134,6 +138,7 @@ export class GameActions {
         nextTurn: state.currentTurn,
       });
       this.io.to(this.room.id).emit('CAN_POUR');
+      this.onTurnAdvanced?.();
     }
   }
 }

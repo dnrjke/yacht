@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { BOARD_CONSTANTS } from '@yacht/core';
 import { RoomManager, Room, PlayerSlot } from './RoomManager';
 import { GameActions } from './GameActions';
+import { ServerAutoPlay } from './ServerAutoPlay';
 
 dotenv.config();
 
@@ -27,6 +28,8 @@ const GRACE_PERIOD_MS = 30_000;
 
 const roomManager = new RoomManager();
 const roomActionsMap = new Map<string, GameActions>();
+const roomAutoPlayMap = new Map<string, ServerAutoPlay>();
+const IDLE_ROOM_TIMEOUT_MS = 5 * 60 * 1000;
 
 // Rate limiting per socket
 const socketRateMap = new Map<string, { game: number[]; shake: number[] }>();
@@ -59,8 +62,31 @@ function validateShakeState(data: any): boolean {
 
 const BOUND_EVENTS = [
   'CUP_SHAKE_STATE', 'POUR_CUP', 'KEEP_DIE', 'UNKEEP_DIE',
-  'REROLL', 'COLLECTION_DONE', 'SUBMIT_SCORE', 'REQUEST_REMATCH', 'disconnect',
+  'REROLL', 'COLLECTION_DONE', 'SUBMIT_SCORE', 'REQUEST_REMATCH',
+  'RESUME_CONTROL', 'disconnect',
 ];
+
+function tryResumeAutoPlay(room: Room): void {
+  const ap = roomAutoPlayMap.get(room.id);
+  if (ap?.isActive) ap.requestResume();
+}
+
+function resetTurnTimerForPlayer(room: Room, role: 'p1' | 'p2'): void {
+  if (room.state.currentTurn !== role) return;
+  if (room.state.finished) return;
+  const ap = roomAutoPlayMap.get(room.id);
+  if (ap?.isActive) return;
+  room.state.resetTurnTimer();
+  io.to(room.id).emit('TURN_TIMER_SYNC', { remainingMs: room.state.getRemainingMs() });
+}
+
+function cleanupRoom(roomId: string): void {
+  const ap = roomAutoPlayMap.get(roomId);
+  if (ap?.isActive) ap.stop();
+  roomAutoPlayMap.delete(roomId);
+  roomActionsMap.delete(roomId);
+  roomManager.destroyRoom(roomId);
+}
 
 function unbindGameEvents(socket: Socket): void {
   for (const event of BOUND_EVENTS) {
@@ -90,22 +116,30 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
 
   socket.on('POUR_CUP', (data: any) => {
     if (!checkRateLimit(socket.id, 'game')) return;
+    tryResumeAutoPlay(room);
     gameActions.handleFromSocket(role, 'POUR_CUP', data, socket);
+    resetTurnTimerForPlayer(room, role);
   });
 
   socket.on('KEEP_DIE', (data: any) => {
     if (!checkRateLimit(socket.id, 'game')) return;
+    tryResumeAutoPlay(room);
     gameActions.handleFromSocket(role, 'KEEP_DIE', data, socket);
+    resetTurnTimerForPlayer(room, role);
   });
 
   socket.on('UNKEEP_DIE', (data: any) => {
     if (!checkRateLimit(socket.id, 'game')) return;
+    tryResumeAutoPlay(room);
     gameActions.handleFromSocket(role, 'UNKEEP_DIE', data, socket);
+    resetTurnTimerForPlayer(room, role);
   });
 
   socket.on('REROLL', () => {
     if (!checkRateLimit(socket.id, 'game')) return;
+    tryResumeAutoPlay(room);
     gameActions.handleFromSocket(role, 'REROLL', {}, socket);
+    resetTurnTimerForPlayer(room, role);
   });
 
   socket.on('COLLECTION_DONE', () => {
@@ -115,7 +149,14 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
 
   socket.on('SUBMIT_SCORE', (data: any) => {
     if (!checkRateLimit(socket.id, 'game')) return;
+    tryResumeAutoPlay(room);
     gameActions.handleFromSocket(role, 'SUBMIT_SCORE', data, socket);
+    resetTurnTimerForPlayer(room, role);
+  });
+
+  socket.on('RESUME_CONTROL', () => {
+    if (room.state.currentTurn !== role) return;
+    tryResumeAutoPlay(room);
   });
 
   socket.on('REQUEST_REMATCH', () => {
@@ -128,6 +169,9 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
       room.physics.spawnDiceInCup();
       room.rematchFlags = { p1: false, p2: false };
       io.to(room.id).emit('REMATCH_START');
+      io.to(room.id).emit('CAN_POUR');
+      room.state.startTurnTimer();
+      io.to(room.id).emit('TURN_TIMER_SYNC', { remainingMs: room.state.getRemainingMs() });
     } else {
       const opponent = roomManager.getOpponent(room, slot.playerId);
       if (opponent?.socketId) {
@@ -144,6 +188,13 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
     slot.connected = false;
     slot.disconnectedAt = Date.now();
 
+    if (room.state.currentTurn === role && !room.state.finished) {
+      const ap = roomAutoPlayMap.get(room.id);
+      if (!ap?.isActive) {
+        room.state.freezeTurnTimer();
+      }
+    }
+
     const opponent = roomManager.getOpponent(room, slot.playerId);
     if (opponent?.socketId) {
       io.to(opponent.socketId).emit('OPPONENT_DISCONNECTED', {
@@ -156,8 +207,7 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
         if (opponent?.socketId && opponent.connected) {
           io.to(opponent.socketId).emit('OPPONENT_TIMEOUT');
         }
-        roomActionsMap.delete(room.id);
-        roomManager.destroyRoom(room.id);
+        cleanupRoom(room.id);
         console.log(`Room ${room.id} destroyed (disconnect timeout)`);
       }
     }, GRACE_PERIOD_MS);
@@ -172,6 +222,17 @@ io.on('connection', (socket) => {
       const room = await roomManager.createRoom(data.playerName, data.playerId, data.secret, socket.id);
       socket.join(room.id);
       (socket as any)._roomId = room.id;
+
+      room.idleTimer = setTimeout(() => {
+        if (room.players.length < 2) {
+          if (room.players[0]?.socketId) {
+            io.to(room.players[0].socketId).emit('JOIN_ERROR', { reason: 'idle_timeout' });
+          }
+          cleanupRoom(room.id);
+          console.log(`Room ${room.id} destroyed (idle timeout)`);
+        }
+      }, IDLE_ROOM_TIMEOUT_MS);
+
       socket.emit('ROOM_CREATED', { roomId: room.id, code: room.code });
       console.log(`Room created: ${room.id} (code: ${room.code}) by ${data.playerName}`);
     } catch (e: any) {
@@ -198,8 +259,32 @@ io.on('connection', (socket) => {
 
     socket.join(room.id);
 
+    if (room.idleTimer) {
+      clearTimeout(room.idleTimer);
+      room.idleTimer = null;
+    }
+
     const gameActions = new GameActions(room, io);
     roomActionsMap.set(room.id, gameActions);
+
+    const autoPlay = new ServerAutoPlay(room, gameActions, io);
+    roomAutoPlayMap.set(room.id, autoPlay);
+
+    room.state.onTurnTimeout = () => {
+      if (room.state.finished) return;
+      autoPlay.start();
+    };
+
+    gameActions.onTurnAdvanced = () => {
+      if (autoPlay.isActive) autoPlay.stop();
+      room.state.resetTurnTimer();
+      io.to(room.id).emit('TURN_TIMER_SYNC', { remainingMs: room.state.getRemainingMs() });
+    };
+
+    gameActions.onGameFinished = () => {
+      room.state.clearTurnTimer();
+      if (autoPlay.isActive) autoPlay.stop();
+    };
 
     room.physics.spawnDiceInCup();
     room.state.canPour = true;
@@ -269,6 +354,17 @@ io.on('connection', (socket) => {
 
     if (opponent?.socketId) {
       io.to(opponent.socketId).emit('OPPONENT_RECONNECTED');
+    }
+
+    const reconnectRole = roomManager.getPlayerRole(room, data.playerId);
+    if (reconnectRole && room.state.currentTurn === reconnectRole && !room.state.finished) {
+      const ap = roomAutoPlayMap.get(room.id);
+      if (ap?.isActive) {
+        ap.requestResume();
+      } else {
+        room.state.resumeTurnTimer();
+        io.to(room.id).emit('TURN_TIMER_SYNC', { remainingMs: room.state.getRemainingMs() });
+      }
     }
 
     bindGameEvents(socket, room, slot);
