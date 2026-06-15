@@ -631,8 +631,41 @@ export class PhysicsWorld {
     const INSTANT_CORRECTION_THRESHOLD = 3;
 
     const effectivePos = corrDist > INSTANT_CORRECTION_THRESHOLD ? clampedPosition : cupPosition;
-    this.cupBody.setNextKinematicTranslation(effectivePos);
-    this.cupBody.setNextKinematicRotation(cupQuaternion);
+    if (corrDist > INSTANT_CORRECTION_THRESHOLD) {
+      this.cupBody.setTranslation(effectivePos, true);
+      this.cupBody.setRotation(cupQuaternion, true);
+      this.cupBody.setNextKinematicTranslation(effectivePos);
+      this.cupBody.setNextKinematicRotation(cupQuaternion);
+
+      const lidOffset = rotateVec3ByQuat({ x: 0, y: 4.5, z: 0 }, cupQuaternion);
+      const lidPos = {
+        x: effectivePos.x + lidOffset.x,
+        y: effectivePos.y + lidOffset.y,
+        z: effectivePos.z + lidOffset.z,
+      };
+      this.cupLidBody.setTranslation(lidPos, true);
+      this.cupLidBody.setRotation(cupQuaternion, true);
+      this.cupLidBody.setNextKinematicTranslation(lidPos);
+      this.cupLidBody.setNextKinematicRotation(cupQuaternion);
+
+      let cupSlot = 0;
+      this.diceBodies.forEach((dice, i) => {
+        if (this.keptDice[i]) return;
+        const off = CUP_DICE_OFFSETS[cupSlot % CUP_DICE_OFFSETS.length];
+        dice.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+        dice.setTranslation({ x: effectivePos.x + off.x, y: effectivePos.y + off.y, z: effectivePos.z + off.z }, true);
+        dice.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        dice.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        this.snapRotationToValue(dice, this.currentDiceValues[i]);
+        dice.lockRotations(true, true);
+        this.diceInCup[i] = true;
+        dice.wakeUp();
+        cupSlot++;
+      });
+    } else {
+      this.cupBody.setNextKinematicTranslation(effectivePos);
+      this.cupBody.setNextKinematicRotation(cupQuaternion);
+    }
 
     if (needsCorrection && corrDist <= INSTANT_CORRECTION_THRESHOLD) {
       const SPEED_UNITS_PER_FRAME = 0.5;
