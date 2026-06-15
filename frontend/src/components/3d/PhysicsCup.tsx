@@ -127,8 +127,8 @@ export function PhysicsCup() {
       if (result.preview) {
         awaitingAuthoritativeCupResult = true;
       }
-      const frames = cupRef.current && anticipation.current
-        ? buildCupBridgeFrames(cupRef.current, result.cupTrajectory, result.preview ? 24 : ONLINE_BRIDGE_FRAMES)
+      const frames = cupRef.current && anticipation.current && !result.preview
+        ? buildCupBridgeFrames(cupRef.current, result.cupTrajectory, ONLINE_BRIDGE_FRAMES)
         : result.cupTrajectory;
       const FRAME_DT = 1 / 60;
       const initialTime = !result.preview && lastPreviewCupPlaybackTime > 0
