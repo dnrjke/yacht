@@ -601,7 +601,7 @@ export class PhysicsWorld {
     const corrDx = clampedPosition.x - cupPosition.x;
     const corrDz = clampedPosition.z - cupPosition.z;
     const corrDist = needsCorrection ? Math.sqrt(corrDx * corrDx + corrDz * corrDz) : 0;
-    const INSTANT_CORRECTION_THRESHOLD = 3;
+    const INSTANT_CORRECTION_THRESHOLD = Number.POSITIVE_INFINITY;
 
     const effectivePos = corrDist > INSTANT_CORRECTION_THRESHOLD ? clampedPosition : cupPosition;
     if (corrDist > INSTANT_CORRECTION_THRESHOLD) {
@@ -641,7 +641,7 @@ export class PhysicsWorld {
     }
 
     if (needsCorrection && corrDist <= INSTANT_CORRECTION_THRESHOLD) {
-      const SPEED_UNITS_PER_FRAME = 0.5;
+      const SPEED_UNITS_PER_FRAME = 0.22;
       const correctionFrames = Math.max(10, Math.round(corrDist / SPEED_UNITS_PER_FRAME));
       const corrEaseOut = (t: number) => 1 - (1 - t) * (1 - t);
       let corrPrevPos = { x: cupPosition.x, y: cupPosition.y, z: cupPosition.z };

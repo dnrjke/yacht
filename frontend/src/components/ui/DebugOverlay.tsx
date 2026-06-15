@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { getPhysicsEngine } from '../../physics/physicsEngine';
+import { getCupVisualDebugSnapshot } from '../3d/PhysicsCup';
 import { getDicePlaybackDebugSnapshot, getRenderedDiceDebugSnapshot } from '../3d/PhysicsDice';
 
 interface LogEntry {
@@ -41,6 +42,7 @@ function buildSnapshot() {
   const physics = getPhysicsEngine();
   const diceStates = physics?.getDiceStates() ?? [];
   const copiedAt = Date.now();
+  const cupVisual = getCupVisualDebugSnapshot();
   const renderedDice = getRenderedDiceDebugSnapshot();
   const dicePlayback = getDicePlaybackDebugSnapshot();
 
@@ -85,6 +87,13 @@ function buildSnapshot() {
     snap.diceInCup = physics.diceInCup;
     snap.keptDice = physics.keptDice;
     snap.physicsValues = physics.currentDiceValues;
+  }
+
+  if (cupVisual) {
+    snap.cupVisual = {
+      ...cupVisual,
+      ageMs: copiedAt - cupVisual.updatedAt,
+    };
   }
 
   if (renderedDice) {
@@ -170,6 +179,7 @@ export function DebugOverlay() {
   const s = useGameStore.getState();
   const physics = getPhysicsEngine();
   const diceStates = physics?.getDiceStates() ?? [];
+  const cupVisual = getCupVisualDebugSnapshot();
   const renderedDice = getRenderedDiceDebugSnapshot();
   const dicePlayback = getDicePlaybackDebugSnapshot();
   const phase = getTurnPhase(s);
@@ -232,6 +242,24 @@ export function DebugOverlay() {
           <Row label="frame" value={`${dicePlayback.currentFrame}/${dicePlayback.totalFrames}`} />
           <Row label="remaining" value={`${dicePlayback.remainingMs}ms`} warn={dicePlayback.remainingMs > 3000} />
           <Row label="age" value={`${Date.now() - dicePlayback.updatedAt}ms`} />
+        </Section>
+      )}
+
+      {cupVisual && (
+        <Section title="Cup Visual">
+          <Row label="source" value={cupVisual.source} />
+          <Row label="visual" value={`pos(${cupVisual.visualPosition.x}, ${cupVisual.visualPosition.y}, ${cupVisual.visualPosition.z})`} />
+          {cupVisual.physicsPosition && (
+            <Row label="physics" value={`pos(${cupVisual.physicsPosition.x}, ${cupVisual.physicsPosition.y}, ${cupVisual.physicsPosition.z})`} />
+          )}
+          <Row label="delta" value={`${cupVisual.visualPhysicsDelta ?? 'n/a'}`} warn={(cupVisual.visualPhysicsDelta ?? 0) > 1} />
+          {cupVisual.playback && (
+            <Row label="playback" value={`${cupVisual.playback.preview ? 'preview' : 'auth'} ${cupVisual.playback.currentFrame}/${cupVisual.playback.totalFrames}`} />
+          )}
+          {cupVisual.lastPointerUp && (
+            <Row label="upAge" value={`${cupVisual.lastPointerUp.ageMs}ms`} />
+          )}
+          <Row label="age" value={`${Date.now() - cupVisual.updatedAt}ms`} />
         </Section>
       )}
 

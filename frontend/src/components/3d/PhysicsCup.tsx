@@ -31,6 +31,40 @@ const OPPONENT_SHAKE_HOLD_MS = 700;
 let lastPreviewCupPlaybackTime = 0;
 let awaitingAuthoritativeCupResult = false;
 
+type CupPlayback = { frames: any[], time: number, preview?: boolean };
+
+interface CupVisualDebugSnapshot {
+  updatedAt: number;
+  updatedAtIso: string;
+  source: 'idle' | 'dragging' | 'anticipation' | 'cupPlayback' | 'opponentShake' | 'restLerp' | 'cancelled';
+  visualPosition: { x: number; y: number; z: number };
+  visualQuaternion: { x: number; y: number; z: number; w: number };
+  physicsPosition?: { x: number; y: number; z: number };
+  physicsQuaternion?: { x: number; y: number; z: number; w: number };
+  visualPhysicsDelta?: number;
+  playback?: {
+    preview: boolean;
+    currentFrame: number;
+    totalFrames: number;
+    elapsedMs: number;
+    remainingMs: number;
+  };
+  lastPointerUp?: {
+    at: number;
+    ageMs: number;
+    position: { x: number; y: number; z: number };
+    turnNumber: number;
+    rollId: number;
+  };
+}
+
+let cupVisualDebugSnapshot: CupVisualDebugSnapshot | null = null;
+let lastCupPointerUp: Omit<NonNullable<CupVisualDebugSnapshot['lastPointerUp']>, 'ageMs'> | null = null;
+
+export function getCupVisualDebugSnapshot(): CupVisualDebugSnapshot | null {
+  return cupVisualDebugSnapshot;
+}
+
 export function PhysicsCup() {
   const cupRef = useRef<THREE.Group>(null);
   const isDragging = useRef(false);
@@ -42,7 +76,7 @@ export function PhysicsCup() {
   const raycaster = useRef(new THREE.Raycaster());
   const rayTarget = useRef(new THREE.Vector3());
 
-  const cupPlayback = useRef<{ frames: any[], time: number, preview?: boolean } | null>(null);
+  const cupPlayback = useRef<CupPlayback | null>(null);
   const anticipation = useRef<{
     time: number;
     startPos: THREE.Vector3;
@@ -155,6 +189,16 @@ export function PhysicsCup() {
           z: +cupRef.current.position.z.toFixed(2),
         },
       });
+      lastCupPointerUp = {
+        at: Date.now(),
+        position: {
+          x: cupRef.current.position.x,
+          y: cupRef.current.position.y,
+          z: cupRef.current.position.z,
+        },
+        turnNumber: s.onlineTurnNumber,
+        rollId: s.onlineRollId,
+      };
 
       if (canPour) {
         if (s.gameMode === 'online') {
@@ -188,6 +232,11 @@ export function PhysicsCup() {
               },
             });
             if (physics) {
+              physics.updateCupTransform(
+                { x: cupRef.current!.position.x, y: cupRef.current!.position.y, z: cupRef.current!.position.z },
+                { x: cupRef.current!.quaternion.x, y: cupRef.current!.quaternion.y, z: cupRef.current!.quaternion.z, w: cupRef.current!.quaternion.w },
+              );
+              physics.step();
               physics.reconcileDiceInCupPositions();
               if (physics.allDiceReadyToPour()) {
                 const previewStartedAt = Date.now();
@@ -238,6 +287,7 @@ export function PhysicsCup() {
       lastPreviewCupPlaybackTime = 0;
       cupRef.current.position.set(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
       cupRef.current.quaternion.set(0, 0, 0, 1);
+      updateCupVisualDebugSnapshot('cancelled', cupRef.current, cupPlayback.current);
       return;
     }
 
@@ -271,6 +321,7 @@ export function PhysicsCup() {
         cupRef.current.position.set(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
         cupRef.current.quaternion.set(0, 0, 0, 1);
       }
+      updateCupVisualDebugSnapshot('cupPlayback', cupRef.current, pb);
       return;
     }
 
@@ -278,6 +329,7 @@ export function PhysicsCup() {
       anticipation.current = null;
       cupRef.current.position.set(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
       cupRef.current.quaternion.set(0, 0, 0, 1);
+      updateCupVisualDebugSnapshot('cancelled', cupRef.current, null);
       return;
     }
 
@@ -287,6 +339,7 @@ export function PhysicsCup() {
       const t = 1 - Math.pow(1 - a.time / ONLINE_ANTICIPATION_DURATION, 3);
       cupRef.current.position.lerpVectors(a.startPos, a.targetPos, t);
       cupRef.current.quaternion.slerpQuaternions(a.startQuat, a.targetQuat, t);
+      updateCupVisualDebugSnapshot('anticipation', cupRef.current, null);
       return;
     }
 
@@ -327,6 +380,7 @@ export function PhysicsCup() {
           console.warn('[AI] pour failed after shake timeout');
         }
       }
+      updateCupVisualDebugSnapshot('dragging', cupRef.current, null);
       return;
     }
 
@@ -345,6 +399,7 @@ export function PhysicsCup() {
           if (frame.cupQuaternion) {
             cupRef.current.quaternion.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
           }
+          updateCupVisualDebugSnapshot('opponentShake', cupRef.current, null);
         }
       } else if (opponentShakeSound.current) {
         const shouldReturnToRest = performance.now() - lastOpponentShakeAt.current > OPPONENT_SHAKE_HOLD_MS;
@@ -353,22 +408,33 @@ export function PhysicsCup() {
           soundManager.stopLoop('rolling_dice', 200);
           cupRef.current.position.lerp(_cupRestPos, Math.min(1, delta * 8));
           cupRef.current.quaternion.slerp(_slerp.set(0, 0, 0, 1), Math.min(1, delta * 8));
+          updateCupVisualDebugSnapshot('restLerp', cupRef.current, null);
         }
       } else {
         cupRef.current.position.lerp(_cupRestPos, Math.min(1, delta * 8));
         cupRef.current.quaternion.slerp(_slerp.set(0, 0, 0, 1), Math.min(1, delta * 8));
+        updateCupVisualDebugSnapshot('restLerp', cupRef.current, null);
       }
       return;
     }
 
-    if (!isDragging.current) return;
+    if (!isDragging.current) {
+      updateCupVisualDebugSnapshot('idle', cupRef.current, null);
+      return;
+    }
 
     const physics = getPhysicsEngine();
-    if (!physics) return;
+    if (!physics) {
+      updateCupVisualDebugSnapshot('dragging', cupRef.current, null);
+      return;
+    }
 
     raycaster.current.setFromCamera(pointer, camera);
     raycaster.current.ray.intersectPlane(plane, rayTarget.current);
-    if (!rayTarget.current) return;
+    if (!rayTarget.current) {
+      updateCupVisualDebugSnapshot('dragging', cupRef.current, null);
+      return;
+    }
 
     fixedInputAccum.current += Math.min(delta, 0.1);
     let steps = 0;
@@ -407,6 +473,7 @@ export function PhysicsCup() {
     if (steps >= MAX_FIXED_INPUT_STEPS) {
       fixedInputAccum.current = 0;
     }
+    updateCupVisualDebugSnapshot('dragging', cupRef.current, null);
   });
 
   return (
@@ -493,4 +560,63 @@ function buildCupBridgeFrames(cup: THREE.Group, trajectory: any[], bridgeFrameCo
   }
 
   return [...bridge, ...trajectory];
+}
+
+function updateCupVisualDebugSnapshot(
+  source: CupVisualDebugSnapshot['source'],
+  cup: THREE.Group,
+  playback: CupPlayback | null,
+): void {
+  const updatedAt = Date.now();
+  const physicsCup = getPhysicsEngine()?.getCupState();
+  const dx = physicsCup ? cup.position.x - physicsCup.position.x : 0;
+  const dy = physicsCup ? cup.position.y - physicsCup.position.y : 0;
+  const dz = physicsCup ? cup.position.z - physicsCup.position.z : 0;
+  const frameDt = 1 / 60;
+  const currentFrame = playback ? Math.min(Math.floor(playback.time / frameDt), Math.max(0, playback.frames.length - 1)) : 0;
+
+  cupVisualDebugSnapshot = {
+    updatedAt,
+    updatedAtIso: new Date(updatedAt).toISOString(),
+    source,
+    visualPosition: {
+      x: +cup.position.x.toFixed(2),
+      y: +cup.position.y.toFixed(2),
+      z: +cup.position.z.toFixed(2),
+    },
+    visualQuaternion: {
+      x: +cup.quaternion.x.toFixed(3),
+      y: +cup.quaternion.y.toFixed(3),
+      z: +cup.quaternion.z.toFixed(3),
+      w: +cup.quaternion.w.toFixed(3),
+    },
+    physicsPosition: physicsCup ? {
+      x: +physicsCup.position.x.toFixed(2),
+      y: +physicsCup.position.y.toFixed(2),
+      z: +physicsCup.position.z.toFixed(2),
+    } : undefined,
+    physicsQuaternion: physicsCup ? {
+      x: +physicsCup.quaternion.x.toFixed(3),
+      y: +physicsCup.quaternion.y.toFixed(3),
+      z: +physicsCup.quaternion.z.toFixed(3),
+      w: +physicsCup.quaternion.w.toFixed(3),
+    } : undefined,
+    visualPhysicsDelta: physicsCup ? +Math.sqrt(dx * dx + dy * dy + dz * dz).toFixed(2) : undefined,
+    playback: playback ? {
+      preview: Boolean(playback.preview),
+      currentFrame,
+      totalFrames: playback.frames.length,
+      elapsedMs: Math.round(playback.time * 1000),
+      remainingMs: Math.max(0, Math.round(((playback.frames.length - 1) * frameDt - playback.time) * 1000)),
+    } : undefined,
+    lastPointerUp: lastCupPointerUp ? {
+      ...lastCupPointerUp,
+      ageMs: updatedAt - lastCupPointerUp.at,
+      position: {
+        x: +lastCupPointerUp.position.x.toFixed(2),
+        y: +lastCupPointerUp.position.y.toFixed(2),
+        z: +lastCupPointerUp.position.z.toFixed(2),
+      },
+    } : undefined,
+  };
 }

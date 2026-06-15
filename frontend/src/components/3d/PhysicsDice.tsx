@@ -192,6 +192,37 @@ export function PhysicsDice() {
   } | null>(null);
   const lastPlacementCount = useRef(5);
 
+  const commitAuthoritativePreviewResult = (result: PourResult) => {
+    pendingAuthoritativeResult.current = null;
+    authoritativeBlend.current = null;
+    playbackData.current = null;
+    lastPreviewPlaybackTime = 0;
+    placementAnim.current = null;
+
+    setCurrentDiceValues(result.finalValues);
+    const physics = getPhysicsEngine();
+    if (physics) physics.applyAuthoritativePourResult(result);
+
+    useGameStore.getState().setIsWaitingForPlacement(false);
+    const s = useGameStore.getState();
+    const keptSet = new Set(s.keptDiceSlots.filter(v => v !== null));
+    const nonKeptValues = result.finalValues
+      .map((v, i) => ({ v, i }))
+      .filter(x => !keptSet.has(x.i))
+      .sort((a, b) => a.v !== b.v ? a.v - b.v : a.i - b.i)
+      .map(x => x.i);
+    s.setPlacementOrder(nonKeptValues);
+    s.setActiveCombo(detectCombo(result.finalValues));
+    s.setIsInPlacementMode(true);
+    updateDicePlaybackDebugSnapshot({
+      status: 'placement',
+      totalFrames: result.diceTrajectory.length,
+      currentFrame: Math.max(0, result.diceTrajectory.length - 1),
+      elapsedMs: Math.round((result.diceTrajectory.length / 60) * 1000),
+      remainingMs: 0,
+    });
+  };
+
   const diceMaterials = useMemo(() => [
     new THREE.MeshStandardMaterial({ map: createDiceTexture(2), roughness: 0.3 }),
     new THREE.MeshStandardMaterial({ map: createDiceTexture(5), roughness: 0.3 }),
@@ -255,18 +286,9 @@ export function PhysicsDice() {
 
     if (!playbackData.current && !authoritativeBlend.current && pendingAuthoritativeResult.current && lastPreviewPlaybackTime > 0) {
       const result = pendingAuthoritativeResult.current;
-      const targetFrame = result.diceTrajectory[result.diceTrajectory.length - 1];
-      if (targetFrame) {
-        authoritativeBlend.current = {
-          startTime: clock.elapsedTime,
-          duration: 0.45,
-          startPositions: diceRefs.current.map(m => m ? m.position.clone() : new THREE.Vector3()),
-          startQuaternions: diceRefs.current.map(m => m ? m.quaternion.clone() : new THREE.Quaternion()),
-          targetFrame,
-          result,
-        };
-        pendingAuthoritativeResult.current = null;
-      }
+      commitAuthoritativePreviewResult(result);
+      updateRenderedDiceDebugSnapshot(diceRefs, camera);
+      return;
     }
 
     if (playbackData.current?.preview && store.canPour) {
