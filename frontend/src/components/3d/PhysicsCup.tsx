@@ -99,9 +99,11 @@ export function PhysicsCup() {
       if (canPour) {
         const s = useGameStore.getState();
         if (s.gameMode === 'online') {
+          // Run local physics immediately for instant visual feedback
+          tryPourRef.current();
+          s.setCanPour(false);
           const sock = getSocket();
           if (sock) {
-            s.setCanPour(false);
             sock.emit('POUR_CUP', {
               position: { x: cupRef.current!.position.x, y: cupRef.current!.position.y, z: cupRef.current!.position.z },
               quaternion: { x: cupRef.current!.quaternion.x, y: cupRef.current!.quaternion.y, z: cupRef.current!.quaternion.z, w: cupRef.current!.quaternion.w },

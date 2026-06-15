@@ -61,14 +61,27 @@ export function connectSocket(): Socket {
     const s = useGameStore.getState();
     if (s.gameMode === 'online') {
       s.setRollCount(result.rollCount);
+
+      if (s.currentTurn === s.myRole) {
+        // My turn: local physics already playing the animation.
+        // Only take the server's authoritative dice values.
+        s.setCurrentDiceValues(result.finalValues);
+        return;
+      }
     }
+    // Opponent's turn (or local mode fallback): play the server trajectory
     emitPourResult(result);
   });
 
   socket.on('POUR_REJECTED', ({ reason }: { reason: string }) => {
     pushDebugLog('POUR_REJECTED', { reason });
     console.warn('Pour rejected:', reason);
-    useGameStore.getState().setCanPour(true);
+    const s = useGameStore.getState();
+    // Local simulation may have already started — trigger return to cup
+    s.setIsInPlacementMode(false);
+    s.setReturnReason('turnEnd');
+    s.setIsReturningToCup(true);
+    s.setCanPour(true);
   });
 
   socket.on('KEPT_UPDATE', ({ keptDiceSlots }: { keptDiceSlots: (number | null)[] }) => {
