@@ -54,8 +54,6 @@ export class GameActions {
     state.isSimulating = true;
     state.canPour = false;
 
-    this.room.physics.updateCupTransform(data.position, data.quaternion);
-    this.room.physics.step();
     const result = this.room.physics.simulatePour(data.position, data.quaternion);
 
     state.rollCount++;

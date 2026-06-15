@@ -286,7 +286,6 @@ export function GameScreen() {
       )}
       {phase === 'GAME_OVER' && <ResultOverlay />}
       {isOnline && <AutoPlayOverlay />}
-      <DebugOverlay />
     </>
   );
 
@@ -408,6 +407,7 @@ export function GameScreen() {
         </div>
 
         {homeConfirmOverlay}
+        <DebugOverlay />
       </div>
     );
   }
@@ -449,6 +449,8 @@ export function GameScreen() {
       <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
         {sceneContent}
       </div>
+
+      <DebugOverlay />
     </div>
   );
 }

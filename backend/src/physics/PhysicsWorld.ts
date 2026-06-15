@@ -578,9 +578,26 @@ export class PhysicsWorld {
       clampedPosition.z !== cupPosition.z
     );
 
-    // Set cup to provided position
-    this.cupBody.setNextKinematicTranslation(cupPosition);
-    this.cupBody.setNextKinematicRotation(cupQuaternion);
+    // Teleport cup and dice to pour position immediately.
+    // The server doesn't track shaking, so dice are at rest position — teleport
+    // them into the cup at the pour position to avoid desync.
+    this.cupBody.setTranslation(cupPosition, true);
+    this.cupBody.setRotation(cupQuaternion, true);
+    {
+      let slot = 0;
+      this.diceBodies.forEach((dice, i) => {
+        if (this.keptDice[i]) return;
+        const off = CUP_DICE_OFFSETS[slot % CUP_DICE_OFFSETS.length];
+        dice.setTranslation({
+          x: cupPosition.x + off.x,
+          y: cupPosition.y + off.y,
+          z: cupPosition.z + off.z,
+        }, true);
+        dice.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        dice.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        slot++;
+      });
+    }
 
     // Correction slide (walls OFF, lid ON — dice safe inside cup)
     if (needsCorrection) {
