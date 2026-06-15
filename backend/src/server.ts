@@ -203,6 +203,8 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
     room.rematchFlags[roleKey] = true;
 
     if (room.rematchFlags.p1 && room.rematchFlags.p2) {
+      const ap = roomAutoPlayMap.get(room.id);
+      if (ap?.isActive) ap.stop();
       room.state.reset();
       room.physics.spawnDiceInCup();
       room.rematchFlags = { p1: false, p2: false };
