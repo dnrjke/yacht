@@ -135,7 +135,7 @@ export class ServerGameState {
     return 'draw';
   }
 
-  buildSnapshot(playerId: string, playerIndex: number, opponentName: string, opponentConnected: boolean): GameSnapshot {
+  buildSnapshot(playerId: string, playerIndex: number, opponentName: string, opponentConnected: boolean, autoPlayPlayer: 'p1' | 'p2' | null = null): GameSnapshot {
     const myRole = playerIndex === 0 ? 'p1' : 'p2';
     return {
       currentTurn: this.currentTurn,
@@ -151,7 +151,7 @@ export class ServerGameState {
       myRole: myRole as 'p1' | 'p2',
       opponentName,
       opponentConnected,
-      autoPlayActive: false,
+      autoPlayActive: autoPlayPlayer,
     };
   }
 

@@ -3,6 +3,7 @@ import { useGameStore } from '../../store/gameStore';
 import { SCORE_CATEGORIES, RulesCategory } from '@yacht/core';
 import { useScoreClick } from './useScoreClick';
 import { useI18n } from '../../utils/useI18n';
+import { TurnTimer } from './TurnTimer';
 
 type ScoreboardProps = {
   uiScale?: number;
@@ -51,13 +52,17 @@ export function Scoreboard({ uiScale = 1, compact = false, supernarrow: _superna
     ? t('myTurn')
     : isSingle ? t('aiTurn') : (compact ? t('opponentShort') : t('opponentTurn'));
   const turnColor = isMyTurnNow ? '#4CAF50' : '#2196F3';
+  const autoPlayActive = useGameStore(s => s.autoPlayActive);
+  const opponentRole = myRole === 'p1' ? 'p2' : 'p1';
+  const opponentAutoPlay = isOnline && autoPlayActive === opponentRole;
   const p2Label = isOnline ? (opponentName ?? 'Opponent') : isSingle ? 'AI' : 'P2';
 
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: scaledPx(pad), background: '#1a1a1a', borderRadius: scaledPx(compact ? 4 : 8), color: '#fff', fontSize: bodyFontPx(14) }}>
       {!compact && (
-        <h3 style={{ borderBottom: `${borderPx(1)} solid #444`, paddingBottom: scaledPx(10), margin: `${scaledPx(14)} 0 ${scaledPx(16)}`, color: turnColor, textAlign: 'center', fontSize: titleFontPx(18), lineHeight: 1.2 }}>
+        <h3 style={{ borderBottom: `${borderPx(1)} solid #444`, paddingBottom: scaledPx(10), margin: `${scaledPx(14)} 0 ${scaledPx(16)}`, color: turnColor, textAlign: 'center', fontSize: titleFontPx(18), lineHeight: 1.2, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: scaledPx(8) }}>
           {turnLabel}
+          {isOnline && <TurnTimer fontSize={titleFontPx(14)} />}
         </h3>
       )}
 
@@ -65,10 +70,13 @@ export function Scoreboard({ uiScale = 1, compact = false, supernarrow: _superna
         <thead>
           <tr style={{ borderBottom: `${borderPx(2)} solid #555`, color: '#aaa', fontSize: bodyFontPx(14) }}>
             <th style={{ padding: scaledPx(compact ? 4 : 8), textAlign: 'left', ...(compact ? { color: turnColor, fontSize: titleFontPx(14) } : {}) }}>
-              {compact ? turnLabel : 'Category'}
+              {compact ? <>{turnLabel}{isOnline && <>{' '}<TurnTimer fontSize={secondaryFontPx(11)} /></>}</> : 'Category'}
             </th>
             <th style={{ width: scaledPx(60, 40) }}>P1</th>
-            <th style={{ width: scaledPx(60, 40) }}>{p2Label}</th>
+            <th style={{ width: scaledPx(60, 40) }}>
+              {p2Label}
+              {opponentAutoPlay && <span style={{ fontSize: secondaryFontPx(9), color: '#FFD700', display: 'block' }}>[자동]</span>}
+            </th>
           </tr>
         </thead>
         <tbody>

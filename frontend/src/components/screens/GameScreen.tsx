@@ -9,6 +9,8 @@ import { soundManager } from '../../utils/soundManager';
 import { useI18n } from '../../utils/useI18n';
 import { disconnectSocket } from '../../network/socket';
 import { clearReconnectInfo } from '../../network/identity';
+import { TurnTimer } from '../ui/TurnTimer';
+import { AutoPlayOverlay } from '../ui/AutoPlayOverlay';
 
 const DESKTOP_BASE_HEIGHT = 1080;
 const DESKTOP_MAX_HEIGHT = 2160;
@@ -201,8 +203,11 @@ export function GameScreen() {
     });
   };
 
-  const turnLabel = currentTurn === 'p1' ? t('myTurn') : (gameMode === 'single' ? t('aiTurn') : t('opponentTurn'));
-  const turnColor = currentTurn === 'p1' ? '#4CAF50' : '#2196F3';
+  const myRole = useGameStore(s => s.myRole);
+  const isOnline = gameMode === 'online';
+  const isMyTurnNow = isOnline ? currentTurn === myRole : currentTurn === 'p1';
+  const turnLabel = isMyTurnNow ? t('myTurn') : (gameMode === 'single' ? t('aiTurn') : t('opponentTurn'));
+  const turnColor = isMyTurnNow ? '#4CAF50' : '#2196F3';
 
   const homeButton = (
     <button onClick={() => setShowHomeConfirm(true)} style={toolbarBtnStyle}>
@@ -279,6 +284,7 @@ export function GameScreen() {
         </div>
       )}
       {phase === 'GAME_OVER' && <ResultOverlay />}
+      {isOnline && <AutoPlayOverlay />}
     </>
   );
 
@@ -384,8 +390,10 @@ export function GameScreen() {
             fontWeight: 'bold',
             fontSize: `${Math.max(13, Math.round(16 * uiScale))}px`,
             pointerEvents: 'none',
+            gap: `${Math.max(4, Math.round(6 * uiScale))}px`,
           }}>
             {turnLabel}
+            {isOnline && <TurnTimer fontSize={`${Math.max(11, Math.round(13 * uiScale))}px`} />}
           </div>
 
           <button onClick={toggleScoreboardPos} style={toolbarBtnStyle}>

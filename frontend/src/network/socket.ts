@@ -118,12 +118,12 @@ export function connectSocket(): Socket {
     useGameStore.getState().setTurnTimerEnd(performance.now() + remainingMs);
   });
 
-  socket.on('AUTO_PLAY_STARTED', () => {
-    useGameStore.getState().setAutoPlayActive(true);
+  socket.on('AUTO_PLAY_STARTED', ({ player }: { player: 'p1' | 'p2' }) => {
+    useGameStore.getState().setAutoPlayActive(player);
   });
 
   socket.on('AUTO_PLAY_ENDED', () => {
-    useGameStore.getState().setAutoPlayActive(false);
+    useGameStore.getState().setAutoPlayActive(null);
   });
 
   socket.on('OPPONENT_DISCONNECTED', ({ gracePeriodMs }: { gracePeriodMs: number }) => {

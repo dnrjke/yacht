@@ -105,7 +105,7 @@ export interface GameSnapshot {
   myRole: 'p1' | 'p2';
   opponentName: string;
   opponentConnected: boolean;
-  autoPlayActive: boolean;
+  autoPlayActive: 'p1' | 'p2' | null;
 }
 
 export function derivePlacementOrder(

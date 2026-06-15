@@ -70,8 +70,8 @@ interface GameState {
   setTurnTimerEnd: (end: number | null) => void;
   returnReason: 'turnEnd' | 'reroll' | null;
   setReturnReason: (reason: 'turnEnd' | 'reroll' | null) => void;
-  autoPlayActive: boolean;
-  setAutoPlayActive: (active: boolean) => void;
+  autoPlayActive: 'p1' | 'p2' | null;
+  setAutoPlayActive: (active: 'p1' | 'p2' | null) => void;
 }
 
 const initialScores = SCORE_CATEGORIES.reduce((acc, cat) => {
@@ -203,6 +203,8 @@ export const useGameStore = create<GameState>((set) => ({
       isSyncingDice: false,
       placementOrder: [0, 1, 2, 3, 4],
       activeCombo: null,
+      autoPlayActive: null,
+      turnTimerEnd: null,
     });
   },
 
@@ -221,7 +223,7 @@ export const useGameStore = create<GameState>((set) => ({
   setTurnTimerEnd: (turnTimerEnd) => set({ turnTimerEnd }),
   returnReason: null,
   setReturnReason: (returnReason) => set({ returnReason }),
-  autoPlayActive: false,
+  autoPlayActive: null,
   setAutoPlayActive: (autoPlayActive) => set({ autoPlayActive }),
 }));
 

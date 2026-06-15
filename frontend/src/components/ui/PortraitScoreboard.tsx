@@ -56,11 +56,21 @@ export function PortraitScoreboard({ uiScale = 1 }: Props) {
     );
   };
 
+  const isOnline = gameMode === 'online';
+  const myRole = useGameStore(s => s.myRole);
+  const autoPlayActive = useGameStore(s => s.autoPlayActive);
+  const opponentRole = myRole === 'p1' ? 'p2' : 'p1';
+  const opponentAutoPlay = isOnline && autoPlayActive === opponentRole;
+  const p2Header = isOnline ? (useGameStore.getState().opponentName ?? 'P2') : gameMode === 'single' ? 'AI' : 'P2';
+
   const headRow = (
     <tr style={{ borderBottom: `${borderPx(2)} solid #555`, color: '#aaa', fontSize: secondaryFontPx(12) }}>
       <th style={{ padding: scaledPx(4), textAlign: 'left' }}>Category</th>
       <th style={{ width: scaledPx(48, 36) }}>P1</th>
-      <th style={{ width: scaledPx(48, 36) }}>{gameMode === 'online' ? (useGameStore.getState().opponentName ?? 'P2') : gameMode === 'single' ? 'AI' : 'P2'}</th>
+      <th style={{ width: scaledPx(48, 36) }}>
+        {p2Header}
+        {opponentAutoPlay && <span style={{ fontSize: secondaryFontPx(8), color: '#FFD700', display: 'block' }}>[자동]</span>}
+      </th>
     </tr>
   );
 

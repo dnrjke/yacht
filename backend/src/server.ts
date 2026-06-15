@@ -343,11 +343,14 @@ io.on('connection', (socket) => {
 
     const playerIdx = room.players.indexOf(slot);
     const opponent = roomManager.getOpponent(room, data.playerId);
+    const ap = roomAutoPlayMap.get(room.id);
+    const autoPlayPlayer = ap?.isActive ? room.state.currentTurn : null;
     const snapshot = room.state.buildSnapshot(
       data.playerId,
       playerIdx,
       opponent?.name ?? '',
       opponent?.connected ?? false,
+      autoPlayPlayer,
     );
 
     socket.emit('RECONNECT_OK', { snapshot });
