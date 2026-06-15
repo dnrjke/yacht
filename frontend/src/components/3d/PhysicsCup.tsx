@@ -31,6 +31,7 @@ export function PhysicsCup() {
   const cupPlayback = useRef<{ frames: any[], time: number } | null>(null);
   const aiShake = useRef<{ t: number; center: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const shakeEmitAccum = useRef(0);
+  const opponentShakeSound = useRef(false);
   const SHAKE_EMIT_INTERVAL = 1 / 30;
 
   // 사람/AI 공용 붓기 진입점 — 성공 시 PourResult가 발행되어 재생이 시작된다
@@ -196,6 +197,10 @@ export function PhysicsCup() {
     const s = useGameStore.getState();
     if (s.gameMode === 'online' && !isMyTurn() && !isDragging.current) {
       if (isShakeActive()) {
+        if (!opponentShakeSound.current) {
+          opponentShakeSound.current = true;
+          soundManager.startLoop('rolling_dice', 0.35);
+        }
         const frame = interpolateShake();
         if (frame) {
           cupRef.current.position.set(frame.cupPosition.x, frame.cupPosition.y, frame.cupPosition.z);
@@ -203,6 +208,9 @@ export function PhysicsCup() {
             cupRef.current.quaternion.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
           }
         }
+      } else if (opponentShakeSound.current) {
+        opponentShakeSound.current = false;
+        soundManager.stopLoop('rolling_dice', 200);
       }
       return;
     }

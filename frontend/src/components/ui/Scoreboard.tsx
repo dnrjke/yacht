@@ -53,6 +53,7 @@ export function Scoreboard({ uiScale = 1, compact = false, supernarrow: _superna
     : isSingle ? t('aiTurn') : (compact ? t('opponentShort') : t('opponentTurn'));
   const turnColor = isMyTurnNow ? '#4CAF50' : '#2196F3';
   const autoPlayActive = useGameStore(s => s.autoPlayActive);
+  const opponentQuality = useGameStore(s => s.opponentConnectionQuality);
   const opponentRole = myRole === 'p1' ? 'p2' : 'p1';
   const opponentAutoPlay = isOnline && autoPlayActive === opponentRole;
   const p2Label = isOnline ? (opponentName ?? 'Opponent') : isSingle ? 'AI' : 'P2';
@@ -75,6 +76,9 @@ export function Scoreboard({ uiScale = 1, compact = false, supernarrow: _superna
             <th style={{ width: scaledPx(60, 40) }}>P1</th>
             <th style={{ width: scaledPx(60, 40) }}>
               {p2Label}
+              {isOnline && opponentQuality !== 'good' && (
+                <span style={{ fontSize: secondaryFontPx(9), color: opponentQuality === 'poor' ? '#FF5252' : '#FFC107' }}> ⚡</span>
+              )}
               {opponentAutoPlay && <span style={{ fontSize: secondaryFontPx(9), color: '#FFD700', display: 'block' }}>[자동]</span>}
             </th>
           </tr>

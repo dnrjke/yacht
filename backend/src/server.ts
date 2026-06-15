@@ -3,7 +3,7 @@ import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { BOARD_CONSTANTS } from '@yacht/core';
+import { BOARD_CONSTANTS, ConnectionQuality } from '@yacht/core';
 import { RoomManager, Room, PlayerSlot } from './RoomManager';
 import { GameActions } from './GameActions';
 import { ServerAutoPlay } from './ServerAutoPlay';
@@ -47,6 +47,43 @@ function checkRateLimit(socketId: string, type: 'game' | 'shake'): boolean {
   entry[type] = recent;
   socketRateMap.set(socketId, entry);
   return true;
+}
+
+// Connection quality tracking per socket
+const socketQualityMap = new Map<string, { pings: number[]; lastQuality: ConnectionQuality }>();
+const MAX_PING_SAMPLES = 3;
+
+function assessQuality(pings: number[]): ConnectionQuality {
+  if (pings.length === 0) return 'poor';
+  const avg = pings.reduce((a, b) => a + b, 0) / pings.length;
+  if (avg > 500) return 'poor';
+  if (avg > 200) return 'unstable';
+  return 'good';
+}
+
+function trackPing(socket: Socket, rttMs: number): void {
+  const roomId = (socket as any)._roomId as string | undefined;
+  if (!roomId) return;
+
+  const entry = socketQualityMap.get(socket.id) ?? { pings: [], lastQuality: 'good' as ConnectionQuality };
+  entry.pings.push(rttMs);
+  if (entry.pings.length > MAX_PING_SAMPLES) entry.pings.shift();
+  socketQualityMap.set(socket.id, entry);
+
+  const quality = assessQuality(entry.pings);
+  if (quality !== entry.lastQuality) {
+    entry.lastQuality = quality;
+    const room = roomManager.getRoom(roomId);
+    if (room) {
+      const slot = room.players.find(p => p.socketId === socket.id);
+      if (slot) {
+        const opponent = roomManager.getOpponent(room, slot.playerId);
+        if (opponent?.socketId) {
+          io.to(opponent.socketId).emit('OPPONENT_CONNECTION_QUALITY', { quality });
+        }
+      }
+    }
+  }
 }
 
 function validateShakeState(data: any): boolean {
@@ -183,6 +220,7 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
   socket.on('disconnect', () => {
     console.log(`Player disconnected: ${socket.id} (${slot.name})`);
     socketRateMap.delete(socket.id);
+    socketQualityMap.delete(socket.id);
 
     slot.socketId = null;
     slot.connected = false;
@@ -216,6 +254,14 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
 
 io.on('connection', (socket) => {
   console.log(`Socket connected: ${socket.id}`);
+
+  let lastPingSent = 0;
+  socket.conn.on('ping', () => { lastPingSent = Date.now(); });
+  socket.conn.on('pong', () => {
+    if (lastPingSent > 0) {
+      trackPing(socket, Date.now() - lastPingSent);
+    }
+  });
 
   socket.on('CREATE_ROOM', async (data: { playerName: string; playerId: string; secret: string }) => {
     try {

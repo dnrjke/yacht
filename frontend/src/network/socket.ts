@@ -134,6 +134,10 @@ export function connectSocket(): Socket {
     useGameStore.getState().setAutoPlayActive(null);
   });
 
+  socket.on('OPPONENT_CONNECTION_QUALITY', ({ quality }: { quality: 'good' | 'unstable' | 'poor' }) => {
+    useGameStore.getState().setOpponentConnectionQuality(quality);
+  });
+
   socket.on('OPPONENT_DISCONNECTED', ({ gracePeriodMs }: { gracePeriodMs: number }) => {
     console.log(`Opponent disconnected, grace period: ${gracePeriodMs}ms`);
   });
