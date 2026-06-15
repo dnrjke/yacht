@@ -4,6 +4,7 @@ import { useGameStore } from '../store/gameStore';
 import { emitPourResult } from '../physics/physicsEngine';
 import { getReconnectInfo, clearReconnectInfo } from './identity';
 import { pushShakeFrame, clearShakeBuffer } from './shakeBuffer';
+import { soundManager } from '../utils/soundManager';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
@@ -63,6 +64,9 @@ export function connectSocket(): Socket {
 
   socket.on('KEPT_UPDATE', ({ keptDiceSlots }: { keptDiceSlots: (number | null)[] }) => {
     const s = useGameStore.getState();
+    if (s.gameMode === 'online' && s.currentTurn !== s.myRole) {
+      soundManager.play('tap', { volume: 0.4 });
+    }
     s.setKeptDiceSlots(keptDiceSlots);
     s.setPlacementOrder(derivePlacementOrder(keptDiceSlots, s.currentDiceValues));
   });
@@ -70,8 +74,9 @@ export function connectSocket(): Socket {
   socket.on('COLLECT_TO_CUP', () => {
     const s = useGameStore.getState();
     const isMyTurnNow = s.gameMode === 'online' && s.currentTurn === s.myRole;
-    if (isMyTurnNow) return; // optimistic update already started
+    if (isMyTurnNow) return;
 
+    soundManager.play('reroll', { volume: 0.5 });
     s.setIsInPlacementMode(false);
     s.setIsSyncingDice(true);
     s.setReturnReason('reroll');
@@ -84,8 +89,11 @@ export function connectSocket(): Socket {
     useGameStore.getState().setCanPour(true);
   });
 
-  socket.on('SCORE_CONFIRMED', ({ scores, nextTurn }: { player: string; category: string; value: number; scores: any; nextTurn: 'p1' | 'p2' }) => {
+  socket.on('SCORE_CONFIRMED', ({ player, scores, nextTurn }: { player: string; category: string; value: number; scores: any; nextTurn: 'p1' | 'p2' }) => {
     const s = useGameStore.getState();
+    if (s.gameMode === 'online' && player !== s.myRole) {
+      soundManager.play('score', { volume: 0.5 });
+    }
     s.setScores(scores);
     s.setCurrentTurn(nextTurn);
     s.setRollCount(0);
