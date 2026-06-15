@@ -28,6 +28,7 @@ const FIXED_INPUT_DT = 1 / 60;
 const MAX_FIXED_INPUT_STEPS = 5;
 const CUP_FOLLOW_ALPHA = 0.2;
 const OPPONENT_SHAKE_HOLD_MS = 700;
+let lastPreviewCupPlaybackTime = 0;
 
 export function PhysicsCup() {
   const cupRef = useRef<THREE.Group>(null);
@@ -40,7 +41,7 @@ export function PhysicsCup() {
   const raycaster = useRef(new THREE.Raycaster());
   const rayTarget = useRef(new THREE.Vector3());
 
-  const cupPlayback = useRef<{ frames: any[], time: number } | null>(null);
+  const cupPlayback = useRef<{ frames: any[], time: number, preview?: boolean } | null>(null);
   const anticipation = useRef<{
     time: number;
     startPos: THREE.Vector3;
@@ -86,11 +87,18 @@ export function PhysicsCup() {
       const frames = cupRef.current && anticipation.current
         ? buildCupBridgeFrames(cupRef.current, result.cupTrajectory)
         : result.cupTrajectory;
+      const FRAME_DT = 1 / 60;
+      const initialTime = !result.preview && lastPreviewCupPlaybackTime > 0
+        ? Math.min(lastPreviewCupPlaybackTime, Math.max(0, (frames.length - 1) * FRAME_DT))
+        : 0;
+      if (!result.preview) lastPreviewCupPlaybackTime = 0;
       anticipation.current = null;
       isPouring.current = true;
-      cupPlayback.current = { frames, time: 0 };
+      cupPlayback.current = { frames, time: initialTime, preview: result.preview };
       soundManager.stopLoop('rolling_dice', 200);
-      soundManager.play('pouring_dice', { delay: POURING_DELAY_MS });
+      if (result.preview || initialTime === 0) {
+        soundManager.play('pouring_dice', { delay: POURING_DELAY_MS });
+      }
     });
 
     // AI 붓기 요청 → 보드 위 랜덤 지점으로 이동하며 셰이크 시작
@@ -170,6 +178,32 @@ export function PhysicsCup() {
                 z: +cupRef.current!.position.z.toFixed(2),
               },
             });
+            if (physics) {
+              physics.reconcileDiceInCupPositions();
+              if (physics.allDiceReadyToPour()) {
+                const previewStartedAt = Date.now();
+                const preview = physics.simulatePour(
+                  {
+                    x: cupRef.current!.position.x,
+                    y: cupRef.current!.position.y,
+                    z: cupRef.current!.position.z,
+                  },
+                  {
+                    x: cupRef.current!.quaternion.x,
+                    y: cupRef.current!.quaternion.y,
+                    z: cupRef.current!.quaternion.z,
+                    w: cupRef.current!.quaternion.w,
+                  }
+                );
+                emitPourResult({ ...preview, preview: true });
+                pushDebugLog('LOCAL_PREVIEW_POUR', {
+                  frames: preview.diceTrajectory.length,
+                  simMs: Date.now() - previewStartedAt,
+                });
+              } else {
+                pushDebugLog('LOCAL_PREVIEW_SKIPPED', { reason: 'dice_not_ready' });
+              }
+            }
           } else {
             anticipation.current = null;
             s.setCanPour(true);
@@ -189,12 +223,22 @@ export function PhysicsCup() {
   useFrame((_, delta) => {
     if (!cupRef.current) return;
 
+    if (cupPlayback.current?.preview && useGameStore.getState().canPour) {
+      cupPlayback.current = null;
+      isPouring.current = false;
+      lastPreviewCupPlaybackTime = 0;
+      cupRef.current.position.set(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
+      cupRef.current.quaternion.set(0, 0, 0, 1);
+      return;
+    }
+
     if (cupPlayback.current) {
       const FRAME_DT = 1 / 60;
       const pb = cupPlayback.current;
       const lastIdx = pb.frames.length - 1;
 
       pb.time += Math.min(delta, FRAME_DT);
+      if (pb.preview) lastPreviewCupPlaybackTime = pb.time;
       const fi = pb.time / FRAME_DT;
 
       if (fi < lastIdx) {

@@ -65,7 +65,7 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
 
   socket.on('POUR_RESULT', (result: any) => {
     clearShakeBuffer();
-    pushDebugLog('POUR_RESULT', { finalValues: result.finalValues, rollCount: result.rollCount, frames: result.diceTrajectory?.length });
+    pushDebugLog('POUR_RESULT', { finalValues: result.finalValues, rollCount: result.rollCount, frames: result.diceTrajectory?.length, serverSimMs: result.serverSimMs });
     const s = useGameStore.getState();
     if (s.gameMode === 'online') {
       if (!isCurrentTurnEvent(result.turnNumber)) return;
@@ -78,7 +78,13 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
   socket.on('POUR_REJECTED', ({ reason }: { reason: string }) => {
     pushDebugLog('POUR_REJECTED', { reason });
     console.warn('Pour rejected:', reason);
-    useGameStore.getState().setCanPour(true);
+    const s = useGameStore.getState();
+    const physics = getPhysicsEngine();
+    if (physics) {
+      physics.resetCupToRest();
+      physics.spawnNonKeptDiceInCup(s.keptDiceSlots);
+    }
+    s.setCanPour(true);
   });
 
   socket.on('KEPT_UPDATE', ({ turnNumber, rollId, keptDiceSlots }: { turnNumber?: number; rollId?: number; keptDiceSlots: (number | null)[] }) => {

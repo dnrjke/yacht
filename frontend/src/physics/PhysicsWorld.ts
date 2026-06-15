@@ -5,6 +5,8 @@ export interface PourResult {
   diceTrajectory: Array<Array<{ position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } }>>;
   cupTrajectory: Array<{ position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } }>;
   finalValues: number[];
+  preview?: boolean;
+  serverSimMs?: number;
 }
 
 function rotateVec3ByQuat(

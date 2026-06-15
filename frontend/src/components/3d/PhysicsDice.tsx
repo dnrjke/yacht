@@ -47,7 +47,7 @@ interface RenderedDiceDebugSnapshot {
 }
 
 interface DicePlaybackDebugSnapshot {
-  status: 'idle' | 'playing' | 'waitingForPlacement' | 'placement';
+  status: 'idle' | 'playing' | 'waitingForServer' | 'waitingForPlacement' | 'placement';
   updatedAt: number;
   updatedAtIso: string;
   totalFrames: number;
@@ -58,6 +58,7 @@ interface DicePlaybackDebugSnapshot {
 
 let renderedDiceDebugSnapshot: RenderedDiceDebugSnapshot | null = null;
 let dicePlaybackDebugSnapshot: DicePlaybackDebugSnapshot | null = null;
+let lastPreviewPlaybackTime = 0;
 
 export function getRenderedDiceDebugSnapshot(): RenderedDiceDebugSnapshot | null {
   return renderedDiceDebugSnapshot;
@@ -163,7 +164,7 @@ export function PhysicsDice() {
   const setCurrentDiceValues = useGameStore(state => state.setCurrentDiceValues);
   const isInPlacementMode = useGameStore(state => state.isInPlacementMode);
   const diceRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const playbackData = useRef<{ frames: any[]; time: number } | null>(null);
+  const playbackData = useRef<{ frames: any[]; time: number; preview?: boolean } | null>(null);
   const physicsAccum = useRef(0);
   const placementTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const placementAnim = useRef<{
@@ -199,15 +200,21 @@ export function PhysicsDice() {
       if (store.isWaitingForPlacement) store.setIsWaitingForPlacement(false);
       if (store.isSyncingDice) store.setIsSyncingDice(false);
 
-      playbackData.current = { frames: r.diceTrajectory, time: 0 };
+      const FRAME_DT = 1 / 60;
+      const initialTime = !r.preview && lastPreviewPlaybackTime > 0
+        ? Math.min(lastPreviewPlaybackTime, Math.max(0, (r.diceTrajectory.length - 1) * FRAME_DT))
+        : 0;
+      if (!r.preview) lastPreviewPlaybackTime = 0;
+
+      playbackData.current = { frames: r.diceTrajectory, time: initialTime, preview: r.preview };
       updateDicePlaybackDebugSnapshot({
         status: 'playing',
         totalFrames: r.diceTrajectory.length,
-        currentFrame: 0,
-        elapsedMs: 0,
-        remainingMs: Math.round((r.diceTrajectory.length / 60) * 1000),
+        currentFrame: Math.floor(initialTime / FRAME_DT),
+        elapsedMs: Math.round(initialTime * 1000),
+        remainingMs: Math.max(0, Math.round(((r.diceTrajectory.length - 1) * FRAME_DT - initialTime) * 1000)),
       });
-      setCurrentDiceValues(r.finalValues);
+      if (!r.preview) setCurrentDiceValues(r.finalValues);
       const s = useGameStore.getState();
       if (s.gameMode !== 'online') {
         s.incrementRollCount();
@@ -215,7 +222,7 @@ export function PhysicsDice() {
       s.setCanPour(false);
 
       const physics = getPhysicsEngine();
-      if (physics && s.gameMode === 'online') {
+      if (physics && s.gameMode === 'online' && !r.preview) {
         physics.applyAuthoritativePourResult(r);
       }
     };
@@ -231,6 +238,18 @@ export function PhysicsDice() {
   useFrame(({ camera, clock }, delta) => {
     const store = useGameStore.getState();
     const cam = camera as THREE.PerspectiveCamera;
+
+    if (playbackData.current?.preview && store.canPour) {
+      playbackData.current = null;
+      lastPreviewPlaybackTime = 0;
+      updateDicePlaybackDebugSnapshot({
+        status: 'idle',
+        totalFrames: 0,
+        currentFrame: 0,
+        elapsedMs: 0,
+        remainingMs: 0,
+      });
+    }
 
     // Placement mode
     if (store.isInPlacementMode) {
@@ -437,6 +456,7 @@ export function PhysicsDice() {
 
       pb.time += Math.min(delta, FRAME_DT);
       const fi = pb.time / FRAME_DT;
+      if (pb.preview) lastPreviewPlaybackTime = pb.time;
       updateDicePlaybackDebugSnapshot({
         status: 'playing',
         totalFrames: pb.frames.length,
@@ -467,6 +487,17 @@ export function PhysicsDice() {
         });
       } else {
         playbackData.current = null;
+        if (pb.preview) {
+          updateDicePlaybackDebugSnapshot({
+            status: 'waitingForServer',
+            totalFrames: pb.frames.length,
+            currentFrame: lastIdx,
+            elapsedMs: Math.round(pb.time * 1000),
+            remainingMs: 0,
+          });
+          updateRenderedDiceDebugSnapshot(diceRefs, camera);
+          return;
+        }
         useGameStore.getState().setIsWaitingForPlacement(true);
         updateDicePlaybackDebugSnapshot({
           status: 'waitingForPlacement',

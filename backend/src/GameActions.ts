@@ -75,7 +75,9 @@ export class GameActions {
 
     this.beforePour?.();
     this.room.physics.reconcileDiceInCupPositions();
+    const simStartedAt = Date.now();
     const result = this.room.physics.simulatePour(data.position, data.quaternion);
+    const serverSimMs = Date.now() - simStartedAt;
 
     state.rollCount++;
     state.currentDiceValues = result.finalValues;
@@ -88,6 +90,7 @@ export class GameActions {
       rollId,
       rollCount: state.rollCount,
       serverStartedAt,
+      serverSimMs,
     });
   }
 
