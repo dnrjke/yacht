@@ -30,7 +30,8 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(grep -E \"\\\\.\\(html|json|css\\)$\")"
+      "Bash(grep -E \"\\\\.\\(html|json|css\\)$\")",
+      "PowerShell(Stop-Process *)"
     ]
   }
 }

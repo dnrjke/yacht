@@ -4,6 +4,7 @@ import { Room } from './RoomManager';
 export class GameActions {
   onTurnAdvanced: (() => void) | null = null;
   onGameFinished: (() => void) | null = null;
+  beforePour: (() => void) | null = null;
 
   constructor(private room: Room, private io: Server) {}
 
@@ -57,6 +58,7 @@ export class GameActions {
     const rollId = state.beginRoll();
     const serverStartedAt = Date.now();
 
+    this.beforePour?.();
     this.room.physics.reconcileDiceInCupPositions();
     const result = this.room.physics.simulatePour(data.position, data.quaternion);
 

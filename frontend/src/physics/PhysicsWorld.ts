@@ -531,6 +531,15 @@ export class PhysicsWorld {
     });
   }
 
+  getCupState(): { position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } } {
+    const pos = this.cupBody.translation();
+    const rot = this.cupBody.rotation();
+    return {
+      position: { x: pos.x, y: pos.y, z: pos.z },
+      quaternion: { x: rot.x, y: rot.y, z: rot.z, w: rot.w },
+    };
+  }
+
   simulatePour(
     cupPosition: { x: number; y: number; z: number },
     cupQuaternion: { x: number; y: number; z: number; w: number }

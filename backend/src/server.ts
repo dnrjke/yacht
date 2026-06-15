@@ -7,6 +7,7 @@ import { BOARD_CONSTANTS, ConnectionQuality } from '@yacht/core';
 import { RoomManager, Room, PlayerSlot } from './RoomManager';
 import { GameActions } from './GameActions';
 import { ServerAutoPlay } from './ServerAutoPlay';
+import { RoomPhysicsLoop } from './RoomPhysicsLoop';
 
 dotenv.config();
 
@@ -29,12 +30,13 @@ const GRACE_PERIOD_MS = 30_000;
 const roomManager = new RoomManager();
 const roomActionsMap = new Map<string, GameActions>();
 const roomAutoPlayMap = new Map<string, ServerAutoPlay>();
+const roomPhysicsLoopMap = new Map<string, RoomPhysicsLoop>();
 const IDLE_ROOM_TIMEOUT_MS = 5 * 60 * 1000;
 
 // Rate limiting per socket
 const socketRateMap = new Map<string, { game: number[]; shake: number[] }>();
 const GAME_EVENT_LIMIT = { maxPerSecond: 10, windowMs: 1000 };
-const SHAKE_EVENT_LIMIT = { maxPerSecond: 35, windowMs: 1000 };
+const SHAKE_EVENT_LIMIT = { maxPerSecond: 75, windowMs: 1000 };
 
 function checkRateLimit(socketId: string, type: 'game' | 'shake'): boolean {
   const now = Date.now();
@@ -88,8 +90,9 @@ function trackPing(socket: Socket, rttMs: number): void {
 
 function validateShakeState(data: any): boolean {
   if (!data || !data.cupPosition || !data.diceStates) return false;
-  const { BOARD_SIZE } = BOARD_CONSTANTS;
-  const bound = BOARD_SIZE / 2 + 5;
+  const { BOARD_SIZE, CUP_REST_X, CUP_REST_Z } = BOARD_CONSTANTS;
+  const boardBound = BOARD_SIZE / 2 + 5;
+  const bound = Math.max(boardBound, Math.abs(CUP_REST_X) + 6, Math.abs(CUP_REST_Z) + 6);
   if (Math.abs(data.cupPosition.x) > bound) return false;
   if (Math.abs(data.cupPosition.z) > bound) return false;
   if (data.cupPosition.y < 0 || data.cupPosition.y > 30) return false;
@@ -120,6 +123,9 @@ function resetTurnTimerForPlayer(room: Room, role: 'p1' | 'p2'): void {
 function cleanupRoom(roomId: string): void {
   const ap = roomAutoPlayMap.get(roomId);
   if (ap?.isActive) ap.stop();
+  const physicsLoop = roomPhysicsLoopMap.get(roomId);
+  physicsLoop?.stop();
+  roomPhysicsLoopMap.delete(roomId);
   roomAutoPlayMap.delete(roomId);
   roomActionsMap.delete(roomId);
   roomManager.destroyRoom(roomId);
@@ -138,6 +144,7 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
   (socket as any)._roomId = room.id;
 
   const gameActions = roomActionsMap.get(room.id)!;
+  const physicsLoop = roomPhysicsLoopMap.get(room.id);
 
   socket.on('CUP_SHAKE_STATE', (data: any) => {
     if (!checkRateLimit(socket.id, 'shake')) return;
@@ -146,14 +153,13 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
     if (!room.state.validateTurnContext(data?.turnNumber)) return;
     if (!validateShakeState(data)) return;
 
-    room.physics.updateCupTransform(data.cupPosition, data.cupQuaternion);
-    room.physics.step();
-    room.physics.step();
-
-    const opponent = roomManager.getOpponent(room, slot.playerId);
-    if (opponent?.socketId) {
-      io.to(opponent.socketId).emit('OPPONENT_SHAKE_STATE', data);
-    }
+    physicsLoop?.enqueueShake(role, {
+      turnNumber: data.turnNumber,
+      seq: data.seq,
+      clientSentAt: data.clientSentAt,
+      cupPosition: data.cupPosition,
+      cupQuaternion: data.cupQuaternion,
+    });
   });
 
   socket.on('POUR_CUP', (data: any) => {
@@ -210,6 +216,7 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
     if (room.rematchFlags.p1 && room.rematchFlags.p2) {
       const ap = roomAutoPlayMap.get(room.id);
       if (ap?.isActive) ap.stop();
+      roomPhysicsLoopMap.get(room.id)?.clearInput();
       room.state.reset();
       room.physics.resetForNewGame();
       room.rematchFlags = { p1: false, p2: false };
@@ -323,6 +330,11 @@ io.on('connection', (socket) => {
 
     const gameActions = new GameActions(room, io);
     roomActionsMap.set(room.id, gameActions);
+
+    const physicsLoop = new RoomPhysicsLoop(room, io);
+    physicsLoop.start();
+    roomPhysicsLoopMap.set(room.id, physicsLoop);
+    gameActions.beforePour = () => physicsLoop.flushLatest();
 
     const autoPlay = new ServerAutoPlay(room, gameActions, io);
     roomAutoPlayMap.set(room.id, autoPlay);

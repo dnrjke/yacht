@@ -23,6 +23,9 @@ const _anticipationTargetQuat = new THREE.Quaternion();
 const _anticipationTilt = new THREE.Quaternion();
 const _anticipationAxis = new THREE.Vector3();
 const _cupRestPos = new THREE.Vector3(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
+const FIXED_INPUT_DT = 1 / 60;
+const MAX_FIXED_INPUT_STEPS = 5;
+const CUP_FOLLOW_ALPHA = 0.2;
 
 export function PhysicsCup() {
   const cupRef = useRef<THREE.Group>(null);
@@ -44,9 +47,9 @@ export function PhysicsCup() {
     targetQuat: THREE.Quaternion;
   } | null>(null);
   const aiShake = useRef<{ t: number; center: THREE.Vector3; target: THREE.Vector3 } | null>(null);
-  const shakeEmitAccum = useRef(0);
+  const fixedInputAccum = useRef(0);
+  const shakeSeq = useRef(0);
   const opponentShakeSound = useRef(false);
-  const SHAKE_EMIT_INTERVAL = 1 / 30;
 
   // 사람/AI 공용 붓기 진입점 — 성공 시 PourResult가 발행되어 재생이 시작된다
   const tryPour = (): boolean => {
@@ -123,6 +126,17 @@ export function PhysicsCup() {
           anticipation.current = createOnlineAnticipation(cupRef.current);
           const sock = getSocket();
           if (sock) {
+            const physics = getPhysicsEngine();
+            if (physics) {
+              sock.emit('CUP_SHAKE_STATE', {
+                turnNumber: s.onlineTurnNumber,
+                seq: shakeSeq.current++,
+                clientSentAt: Date.now(),
+                cupPosition: { x: cupRef.current!.position.x, y: cupRef.current!.position.y, z: cupRef.current!.position.z },
+                cupQuaternion: { x: cupRef.current!.quaternion.x, y: cupRef.current!.quaternion.y, z: cupRef.current!.quaternion.z, w: cupRef.current!.quaternion.w },
+                diceStates: physics.getDiceStates(),
+              });
+            }
             sock.emit('POUR_CUP', {
               turnNumber: s.onlineTurnNumber,
               position: { x: cupRef.current!.position.x, y: cupRef.current!.position.y, z: cupRef.current!.position.z },
@@ -249,10 +263,12 @@ export function PhysicsCup() {
       } else if (opponentShakeSound.current) {
         opponentShakeSound.current = false;
         soundManager.stopLoop('rolling_dice', 200);
+        cupRef.current.position.lerp(_cupRestPos, Math.min(1, delta * 8));
+        cupRef.current.quaternion.slerp(_slerp.set(0, 0, 0, 1), Math.min(1, delta * 8));
+      } else {
+        cupRef.current.position.lerp(_cupRestPos, Math.min(1, delta * 8));
+        cupRef.current.quaternion.slerp(_slerp.set(0, 0, 0, 1), Math.min(1, delta * 8));
       }
-
-      cupRef.current.position.lerp(_cupRestPos, Math.min(1, delta * 8));
-      cupRef.current.quaternion.slerp(_slerp.set(0, 0, 0, 1), Math.min(1, delta * 8));
       return;
     }
 
@@ -263,10 +279,13 @@ export function PhysicsCup() {
 
     raycaster.current.setFromCamera(pointer, camera);
     raycaster.current.ray.intersectPlane(plane, rayTarget.current);
+    if (!rayTarget.current) return;
 
-    if (rayTarget.current) {
-      const target = rayTarget.current;
-      cupRef.current.position.lerp(target, 0.2);
+    fixedInputAccum.current += Math.min(delta, 0.1);
+    let steps = 0;
+
+    while (fixedInputAccum.current >= FIXED_INPUT_DT && steps < MAX_FIXED_INPUT_STEPS) {
+      cupRef.current.position.lerp(rayTarget.current, CUP_FOLLOW_ALPHA);
 
       const speed = cupRef.current.position.distanceTo(prevCupPos.current);
       prevCupPos.current.copy(cupRef.current.position);
@@ -278,22 +297,26 @@ export function PhysicsCup() {
         { x: cupRef.current.quaternion.x, y: cupRef.current.quaternion.y, z: cupRef.current.quaternion.z, w: cupRef.current.quaternion.w }
       );
 
-      // Send shake state to server for relay to opponent
       if (s.gameMode === 'online') {
-        shakeEmitAccum.current += delta;
-        if (shakeEmitAccum.current >= SHAKE_EMIT_INTERVAL) {
-          shakeEmitAccum.current = 0;
-          const sock = getSocket();
-          if (sock) {
-            sock.emit('CUP_SHAKE_STATE', {
-              turnNumber: s.onlineTurnNumber,
-              cupPosition: { x: cupRef.current.position.x, y: cupRef.current.position.y, z: cupRef.current.position.z },
-              cupQuaternion: { x: cupRef.current.quaternion.x, y: cupRef.current.quaternion.y, z: cupRef.current.quaternion.z, w: cupRef.current.quaternion.w },
-              diceStates: physics.getDiceStates(),
-            });
-          }
+        const sock = getSocket();
+        if (sock) {
+          sock.emit('CUP_SHAKE_STATE', {
+            turnNumber: s.onlineTurnNumber,
+            seq: shakeSeq.current++,
+            clientSentAt: Date.now(),
+            cupPosition: { x: cupRef.current.position.x, y: cupRef.current.position.y, z: cupRef.current.position.z },
+            cupQuaternion: { x: cupRef.current.quaternion.x, y: cupRef.current.quaternion.y, z: cupRef.current.quaternion.z, w: cupRef.current.quaternion.w },
+            diceStates: physics.getDiceStates(),
+          });
         }
       }
+
+      fixedInputAccum.current -= FIXED_INPUT_DT;
+      steps++;
+    }
+
+    if (steps >= MAX_FIXED_INPUT_STEPS) {
+      fixedInputAccum.current = 0;
     }
   });
 
@@ -305,6 +328,7 @@ export function PhysicsCup() {
         if (isPouring.current || aiShake.current || !canPour || !isMyTurn()) return;
         e.stopPropagation();
         isDragging.current = true;
+        fixedInputAccum.current = 0;
         if (cupRef.current) prevCupPos.current.copy(cupRef.current.position);
         soundManager.startLoop('rolling_dice', 0);
       }}
