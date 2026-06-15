@@ -578,10 +578,18 @@ export class PhysicsWorld {
       clampedPosition.z !== cupPosition.z
     );
 
-    // Teleport cup and dice to pour position immediately.
-    // The server doesn't track shaking, so dice are at rest position — teleport
-    // them into the cup at the pour position to avoid desync.
-    this.cupBody.setTranslation(cupPosition, true);
+    // Teleport cup and dice to the clamped pour position.
+    // The server doesn't track shaking — dice are at rest, so teleport them
+    // into the cup at the effective pour position.
+    // For large corrections (e.g. pour from rest position), skip the slide
+    // animation entirely to avoid lag.
+    const corrDx = clampedPosition.x - cupPosition.x;
+    const corrDz = clampedPosition.z - cupPosition.z;
+    const corrDist = needsCorrection ? Math.sqrt(corrDx * corrDx + corrDz * corrDz) : 0;
+    const INSTANT_CORRECTION_THRESHOLD = 3;
+
+    const effectivePos = corrDist > INSTANT_CORRECTION_THRESHOLD ? clampedPosition : cupPosition;
+    this.cupBody.setTranslation(effectivePos, true);
     this.cupBody.setRotation(cupQuaternion, true);
     {
       let slot = 0;
@@ -589,9 +597,9 @@ export class PhysicsWorld {
         if (this.keptDice[i]) return;
         const off = CUP_DICE_OFFSETS[slot % CUP_DICE_OFFSETS.length];
         dice.setTranslation({
-          x: cupPosition.x + off.x,
-          y: cupPosition.y + off.y,
-          z: cupPosition.z + off.z,
+          x: effectivePos.x + off.x,
+          y: effectivePos.y + off.y,
+          z: effectivePos.z + off.z,
         }, true);
         dice.setLinvel({ x: 0, y: 0, z: 0 }, true);
         dice.setAngvel({ x: 0, y: 0, z: 0 }, true);
@@ -599,11 +607,8 @@ export class PhysicsWorld {
       });
     }
 
-    // Correction slide (walls OFF, lid ON — dice safe inside cup)
-    if (needsCorrection) {
-      const corrDx = clampedPosition.x - cupPosition.x;
-      const corrDz = clampedPosition.z - cupPosition.z;
-      const corrDist = Math.sqrt(corrDx * corrDx + corrDz * corrDz);
+    // Small correction slide (walls OFF, lid ON — dice safe inside cup)
+    if (needsCorrection && corrDist <= INSTANT_CORRECTION_THRESHOLD) {
       const SPEED_UNITS_PER_FRAME = 0.5;
       const correctionFrames = Math.max(10, Math.round(corrDist / SPEED_UNITS_PER_FRAME));
       const corrEaseOut = (t: number) => 1 - (1 - t) * (1 - t);
@@ -616,7 +621,6 @@ export class PhysicsWorld {
           z: cupPosition.z + corrDz * t,
         };
 
-        // Lid follows cup during correction
         const lidOffset = rotateVec3ByQuat({ x: 0, y: 4.5, z: 0 }, cupQuaternion);
         this.cupLidBody.setNextKinematicTranslation({
           x: interpPos.x + lidOffset.x,

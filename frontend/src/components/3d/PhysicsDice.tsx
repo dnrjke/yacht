@@ -122,6 +122,13 @@ export function PhysicsDice() {
         s.incrementRollCount();
       }
       s.setCanPour(false);
+
+      // Sync client physics engine state for online mode
+      const physics = getPhysicsEngine();
+      if (physics && s.gameMode === 'online') {
+        physics.currentDiceValues = r.finalValues;
+        physics.diceInCup = [false, false, false, false, false];
+      }
     };
 
     const unsubscribe = onPourResult(handlePourResult);
