@@ -47,7 +47,7 @@ interface RenderedDiceDebugSnapshot {
 }
 
 interface DicePlaybackDebugSnapshot {
-  status: 'idle' | 'playing' | 'waitingForServer' | 'previewPlacement' | 'reconciling' | 'waitingForPlacement' | 'placement';
+  status: 'idle' | 'playing' | 'waitingForServer' | 'reconciling' | 'waitingForPlacement' | 'placement';
   updatedAt: number;
   updatedAtIso: string;
   totalFrames: number;
@@ -207,6 +207,7 @@ export function PhysicsDice() {
   };
 
   const commitAuthoritativePreviewResult = (result: PourResult) => {
+    const previewElapsedMs = Math.round(lastPreviewPlaybackTime * 1000);
     pendingAuthoritativeResult.current = null;
     authoritativeBlend.current = null;
     playbackData.current = null;
@@ -222,7 +223,7 @@ export function PhysicsDice() {
       status: 'placement',
       totalFrames: result.diceTrajectory.length,
       currentFrame: Math.max(0, result.diceTrajectory.length - 1),
-      elapsedMs: Math.round(lastPreviewPlaybackTime * 1000),
+      elapsedMs: previewElapsedMs,
       remainingMs: 0,
     });
   };
@@ -608,12 +609,8 @@ export function PhysicsDice() {
       } else {
         playbackData.current = null;
         if (pb.preview) {
-          const physics = getPhysicsEngine();
-          const previewValues = physics ? [...physics.currentDiceValues] : [...store.currentDiceValues];
-          setCurrentDiceValues(previewValues);
-          enterPlacementFromValues(previewValues);
           updateDicePlaybackDebugSnapshot({
-            status: 'previewPlacement',
+            status: 'waitingForServer',
             totalFrames: pb.frames.length,
             currentFrame: lastIdx,
             elapsedMs: Math.round(pb.time * 1000),
