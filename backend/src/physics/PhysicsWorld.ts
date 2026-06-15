@@ -822,10 +822,10 @@ export class PhysicsWorld {
     this.setCupCollidersEnabled(true);
 
     // Reset cup and lid to rest position, walls OFF for next shake
-    this.cupBody.setNextKinematicTranslation({ x: CUP_REST_X, y: CUP_REST_Y, z: CUP_REST_Z });
-    this.cupBody.setNextKinematicRotation({ x: 0, y: 0, z: 0, w: 1 });
-    this.cupLidBody.setNextKinematicTranslation({ x: CUP_REST_X, y: CUP_REST_Y + 4.5, z: CUP_REST_Z });
-    this.cupLidBody.setNextKinematicRotation({ x: 0, y: 0, z: 0, w: 1 });
+    this.cupBody.setTranslation({ x: CUP_REST_X, y: CUP_REST_Y, z: CUP_REST_Z }, true);
+    this.cupBody.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+    this.cupLidBody.setTranslation({ x: CUP_REST_X, y: CUP_REST_Y + 4.5, z: CUP_REST_Z }, true);
+    this.cupLidBody.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
     this.setBorderWallsEnabled(false);
 
     this.pendingCupPos = null;

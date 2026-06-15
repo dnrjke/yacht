@@ -11,6 +11,7 @@ import { disconnectSocket } from '../../network/socket';
 import { clearReconnectInfo } from '../../network/identity';
 import { TurnTimer } from '../ui/TurnTimer';
 import { AutoPlayOverlay } from '../ui/AutoPlayOverlay';
+import { DebugOverlay } from '../ui/DebugOverlay';
 
 const DESKTOP_BASE_HEIGHT = 1080;
 const DESKTOP_MAX_HEIGHT = 2160;
@@ -285,6 +286,7 @@ export function GameScreen() {
       )}
       {phase === 'GAME_OVER' && <ResultOverlay />}
       {isOnline && <AutoPlayOverlay />}
+      <DebugOverlay />
     </>
   );
 

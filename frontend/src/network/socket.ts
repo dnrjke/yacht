@@ -5,6 +5,7 @@ import { emitPourResult } from '../physics/physicsEngine';
 import { getReconnectInfo, clearReconnectInfo } from './identity';
 import { pushShakeFrame, clearShakeBuffer } from './shakeBuffer';
 import { soundManager } from '../utils/soundManager';
+import { pushDebugLog } from '../components/ui/DebugOverlay';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
@@ -39,6 +40,7 @@ export function connectSocket(): Socket {
   });
 
   socket.on('RECONNECT_OK', ({ snapshot }: { snapshot: GameSnapshot }) => {
+    pushDebugLog('RECONNECT_OK', { turn: snapshot.currentTurn, rollCount: snapshot.rollCount, turnPhase: snapshot.turnPhase, diceValues: snapshot.currentDiceValues });
     clearShakeBuffer();
     applySnapshot(snapshot);
     const s = useGameStore.getState();
@@ -55,6 +57,7 @@ export function connectSocket(): Socket {
 
   socket.on('POUR_RESULT', (result: any) => {
     clearShakeBuffer();
+    pushDebugLog('POUR_RESULT', { finalValues: result.finalValues, rollCount: result.rollCount, frames: result.diceTrajectory?.length });
     const s = useGameStore.getState();
     if (s.gameMode === 'online') {
       s.setRollCount(result.rollCount);
@@ -63,11 +66,13 @@ export function connectSocket(): Socket {
   });
 
   socket.on('POUR_REJECTED', ({ reason }: { reason: string }) => {
+    pushDebugLog('POUR_REJECTED', { reason });
     console.warn('Pour rejected:', reason);
     useGameStore.getState().setCanPour(true);
   });
 
   socket.on('KEPT_UPDATE', ({ keptDiceSlots }: { keptDiceSlots: (number | null)[] }) => {
+    pushDebugLog('KEPT_UPDATE', { keptDiceSlots });
     const s = useGameStore.getState();
     if (s.gameMode === 'online' && s.currentTurn !== s.myRole) {
       soundManager.play('tap', { volume: 0.4 });
@@ -77,6 +82,7 @@ export function connectSocket(): Socket {
   });
 
   socket.on('COLLECT_TO_CUP', () => {
+    pushDebugLog('COLLECT_TO_CUP', {});
     const s = useGameStore.getState();
     const isMyTurnNow = s.gameMode === 'online' && s.currentTurn === s.myRole;
     if (isMyTurnNow) return;
@@ -91,10 +97,12 @@ export function connectSocket(): Socket {
   });
 
   socket.on('CAN_POUR', () => {
+    pushDebugLog('CAN_POUR', {});
     useGameStore.getState().setCanPour(true);
   });
 
-  socket.on('SCORE_CONFIRMED', ({ player, scores, nextTurn }: { player: string; category: string; value: number; scores: any; nextTurn: 'p1' | 'p2' }) => {
+  socket.on('SCORE_CONFIRMED', ({ player, category, value, scores, nextTurn }: { player: string; category: string; value: number; scores: any; nextTurn: 'p1' | 'p2' }) => {
+    pushDebugLog('SCORE_CONFIRMED', { player, category, value, nextTurn });
     const s = useGameStore.getState();
     if (s.gameMode === 'online' && player !== s.myRole) {
       soundManager.play('score', { volume: 0.5 });
@@ -163,6 +171,7 @@ export function connectSocket(): Socket {
   });
 
   socket.on('REMATCH_START', () => {
+    pushDebugLog('REMATCH_START', {});
     const s = useGameStore.getState();
     s.resetGame();
     s.setCanPour(false);
