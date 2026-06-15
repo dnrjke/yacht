@@ -47,7 +47,7 @@ interface RenderedDiceDebugSnapshot {
 }
 
 interface DicePlaybackDebugSnapshot {
-  status: 'idle' | 'playing' | 'waitingForServer' | 'reconciling' | 'waitingForPlacement' | 'placement';
+  status: 'idle' | 'playing' | 'waitingForServer' | 'previewPlacement' | 'reconciling' | 'waitingForPlacement' | 'placement';
   updatedAt: number;
   updatedAtIso: string;
   totalFrames: number;
@@ -192,6 +192,20 @@ export function PhysicsDice() {
   } | null>(null);
   const lastPlacementCount = useRef(5);
 
+  const enterPlacementFromValues = (values: number[]) => {
+    const s = useGameStore.getState();
+    const keptSet = new Set(s.keptDiceSlots.filter(v => v !== null));
+    const nonKeptValues = values
+      .map((v, i) => ({ v, i }))
+      .filter(x => !keptSet.has(x.i))
+      .sort((a, b) => a.v !== b.v ? a.v - b.v : a.i - b.i)
+      .map(x => x.i);
+    s.setIsWaitingForPlacement(false);
+    s.setPlacementOrder(nonKeptValues);
+    s.setActiveCombo(detectCombo(values));
+    s.setIsInPlacementMode(true);
+  };
+
   const commitAuthoritativePreviewResult = (result: PourResult) => {
     pendingAuthoritativeResult.current = null;
     authoritativeBlend.current = null;
@@ -203,22 +217,12 @@ export function PhysicsDice() {
     const physics = getPhysicsEngine();
     if (physics) physics.applyAuthoritativePourResult(result);
 
-    useGameStore.getState().setIsWaitingForPlacement(false);
-    const s = useGameStore.getState();
-    const keptSet = new Set(s.keptDiceSlots.filter(v => v !== null));
-    const nonKeptValues = result.finalValues
-      .map((v, i) => ({ v, i }))
-      .filter(x => !keptSet.has(x.i))
-      .sort((a, b) => a.v !== b.v ? a.v - b.v : a.i - b.i)
-      .map(x => x.i);
-    s.setPlacementOrder(nonKeptValues);
-    s.setActiveCombo(detectCombo(result.finalValues));
-    s.setIsInPlacementMode(true);
+    enterPlacementFromValues(result.finalValues);
     updateDicePlaybackDebugSnapshot({
       status: 'placement',
       totalFrames: result.diceTrajectory.length,
       currentFrame: Math.max(0, result.diceTrajectory.length - 1),
-      elapsedMs: Math.round((result.diceTrajectory.length / 60) * 1000),
+      elapsedMs: Math.round(lastPreviewPlaybackTime * 1000),
       remainingMs: 0,
     });
   };
@@ -604,8 +608,12 @@ export function PhysicsDice() {
       } else {
         playbackData.current = null;
         if (pb.preview) {
+          const physics = getPhysicsEngine();
+          const previewValues = physics ? [...physics.currentDiceValues] : [...store.currentDiceValues];
+          setCurrentDiceValues(previewValues);
+          enterPlacementFromValues(previewValues);
           updateDicePlaybackDebugSnapshot({
-            status: 'waitingForServer',
+            status: 'previewPlacement',
             totalFrames: pb.frames.length,
             currentFrame: lastIdx,
             elapsedMs: Math.round(pb.time * 1000),

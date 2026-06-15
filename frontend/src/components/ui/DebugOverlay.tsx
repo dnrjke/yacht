@@ -11,7 +11,7 @@ interface LogEntry {
 }
 
 const MAX_LOG = 50;
-const DEBUG_SCHEMA = 'online-pour-debug-v2';
+const DEBUG_SCHEMA = 'online-pour-debug-v3';
 
 let logBuffer: LogEntry[] = [];
 let logSeq = 0;
@@ -89,12 +89,10 @@ function buildSnapshot() {
     snap.physicsValues = physics.currentDiceValues;
   }
 
-  if (cupVisual) {
-    snap.cupVisual = {
-      ...cupVisual,
-      ageMs: copiedAt - cupVisual.updatedAt,
-    };
-  }
+  snap.cupVisual = cupVisual ? {
+    ...cupVisual,
+    ageMs: copiedAt - cupVisual.updatedAt,
+  } : null;
 
   if (renderedDice) {
     snap.renderedDice = {
