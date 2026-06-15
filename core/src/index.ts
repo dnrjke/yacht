@@ -92,6 +92,7 @@ export interface GameSnapshot {
   currentTurn: 'p1' | 'p2';
   rollCount: number;
   turnNumber: number;
+  rollId: number;
   currentDiceValues: (number | null)[];
   keptDiceSlots: (number | null)[];
   scores: {
@@ -106,6 +107,29 @@ export interface GameSnapshot {
   opponentName: string;
   opponentConnected: boolean;
   autoPlayActive: 'p1' | 'p2' | null;
+}
+
+export interface OnlineTurnContext {
+  turnNumber: number;
+  rollId: number;
+}
+
+export interface OnlineTransform {
+  position: { x: number; y: number; z: number };
+  quaternion: { x: number; y: number; z: number; w: number };
+}
+
+export interface OnlineDiceFrame {
+  position: { x: number; y: number; z: number };
+  quaternion: { x: number; y: number; z: number; w: number };
+}
+
+export interface OnlineRollResult extends OnlineTurnContext {
+  rollCount: number;
+  serverStartedAt: number;
+  finalValues: number[];
+  diceTrajectory: OnlineDiceFrame[][];
+  cupTrajectory: OnlineTransform[];
 }
 
 export function derivePlacementOrder(

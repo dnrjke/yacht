@@ -122,6 +122,12 @@ export function PhysicsDice() {
         s.incrementRollCount();
       }
       s.setCanPour(false);
+
+      const physics = getPhysicsEngine();
+      if (physics && s.gameMode === 'online') {
+        physics.currentDiceValues = r.finalValues;
+        physics.diceInCup = [false, false, false, false, false];
+      }
     };
 
     const unsubscribe = onPourResult(handlePourResult);
@@ -235,6 +241,11 @@ export function PhysicsDice() {
 
     // Return-to-cup animation
     if (store.isReturningToCup) {
+      if (placementTimer.current) {
+        clearTimeout(placementTimer.current);
+        placementTimer.current = null;
+      }
+
       if (!returnAnim.current) {
         returnAnim.current = {
           startTime: clock.elapsedTime,
@@ -291,16 +302,19 @@ export function PhysicsDice() {
         store.setIsReturningToCup(false);
 
         if (store.gameMode === 'online') {
-          const isMine = store.currentTurn === store.myRole;
-          if (isMine) {
-            const physics = getPhysicsEngine();
+          const physics = getPhysicsEngine();
+          if (physics) {
             if (store.returnReason === 'turnEnd') {
-              if (physics) physics.spawnDiceInCup();
+              physics.spawnNonKeptDiceInCup([null, null, null, null, null]);
             } else {
-              if (physics) physics.spawnNonKeptDiceInCup(store.keptDiceSlots);
-              const sock = getSocket();
-              if (sock) sock.emit('COLLECTION_DONE');
+              physics.spawnNonKeptDiceInCup(store.keptDiceSlots);
             }
+          }
+
+          const isMine = store.currentTurn === store.myRole;
+          if (isMine && store.returnReason === 'reroll') {
+            const sock = getSocket();
+            if (sock) sock.emit('COLLECTION_DONE', { turnNumber: store.onlineTurnNumber });
           }
           store.setReturnReason(null);
           store.setIsSyncingDice(false);
@@ -436,14 +450,14 @@ export function PhysicsDice() {
               soundManager.play('tap_smooth');
               if (s.gameMode === 'online') {
                 const sock = getSocket();
-                if (sock) sock.emit('UNKEEP_DIE', { dieIndex: idx });
+                if (sock) sock.emit('UNKEEP_DIE', { turnNumber: s.onlineTurnNumber, dieIndex: idx });
               }
             } else if (s.placementOrder.includes(idx)) {
               s.keepDie(idx);
               soundManager.play('tap');
               if (s.gameMode === 'online') {
                 const sock = getSocket();
-                if (sock) sock.emit('KEEP_DIE', { dieIndex: idx });
+                if (sock) sock.emit('KEEP_DIE', { turnNumber: s.onlineTurnNumber, dieIndex: idx });
               }
             }
           } : undefined}

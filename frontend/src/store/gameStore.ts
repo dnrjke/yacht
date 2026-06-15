@@ -74,6 +74,9 @@ interface GameState {
   setAutoPlayActive: (active: 'p1' | 'p2' | null) => void;
   opponentWantsRematch: boolean;
   setOpponentWantsRematch: (val: boolean) => void;
+  onlineTurnNumber: number;
+  onlineRollId: number;
+  setOnlineContext: (turnNumber: number, rollId: number) => void;
 }
 
 const initialScores = SCORE_CATEGORIES.reduce((acc, cat) => {
@@ -208,6 +211,8 @@ export const useGameStore = create<GameState>((set) => ({
       autoPlayActive: null,
       turnTimerEnd: null,
       opponentWantsRematch: false,
+      onlineTurnNumber: 1,
+      onlineRollId: 0,
     });
   },
 
@@ -230,6 +235,9 @@ export const useGameStore = create<GameState>((set) => ({
   setAutoPlayActive: (autoPlayActive) => set({ autoPlayActive }),
   opponentWantsRematch: false,
   setOpponentWantsRematch: (opponentWantsRematch) => set({ opponentWantsRematch }),
+  onlineTurnNumber: 1,
+  onlineRollId: 0,
+  setOnlineContext: (onlineTurnNumber, onlineRollId) => set({ onlineTurnNumber, onlineRollId }),
 }));
 
 export function isAiTurnNow(): boolean {

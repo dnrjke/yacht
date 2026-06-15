@@ -19,6 +19,7 @@ export class GameActions {
     const state = this.room.state;
     if (state.currentTurn !== playerRole) return;
     if (!state.isEventAllowed(event)) return;
+    if (!state.validateTurnContext(data?.turnNumber)) return;
 
     switch (event) {
       case 'POUR_CUP':
@@ -53,7 +54,10 @@ export class GameActions {
     state.turnPhase = 'simulating';
     state.isSimulating = true;
     state.canPour = false;
+    const rollId = state.beginRoll();
+    const serverStartedAt = Date.now();
 
+    this.room.physics.reconcileDiceInCupPositions();
     const result = this.room.physics.simulatePour(data.position, data.quaternion);
 
     state.rollCount++;
@@ -63,7 +67,10 @@ export class GameActions {
 
     this.io.to(this.room.id).emit('POUR_RESULT', {
       ...result,
+      turnNumber: state.turnNumber,
+      rollId,
       rollCount: state.rollCount,
+      serverStartedAt,
     });
   }
 
@@ -71,14 +78,22 @@ export class GameActions {
     if (!this.room.state.validateKeep(playerRole, dieIndex)) return;
     if (this.room.state.keptDiceSlots.includes(dieIndex)) return;
     this.room.state.applyKeep(dieIndex);
-    this.io.to(this.room.id).emit('KEPT_UPDATE', { keptDiceSlots: this.room.state.keptDiceSlots });
+    this.io.to(this.room.id).emit('KEPT_UPDATE', {
+      turnNumber: this.room.state.turnNumber,
+      rollId: this.room.state.rollId,
+      keptDiceSlots: this.room.state.keptDiceSlots,
+    });
   }
 
   private handleUnkeep(playerRole: 'p1' | 'p2', dieIndex: number): void {
     if (!this.room.state.validateKeep(playerRole, dieIndex)) return;
     if (!this.room.state.keptDiceSlots.includes(dieIndex)) return;
     this.room.state.applyUnkeep(dieIndex);
-    this.io.to(this.room.id).emit('KEPT_UPDATE', { keptDiceSlots: this.room.state.keptDiceSlots });
+    this.io.to(this.room.id).emit('KEPT_UPDATE', {
+      turnNumber: this.room.state.turnNumber,
+      rollId: this.room.state.rollId,
+      keptDiceSlots: this.room.state.keptDiceSlots,
+    });
   }
 
   private handleReroll(playerRole: 'p1' | 'p2', socket: Socket | null): void {
@@ -88,7 +103,11 @@ export class GameActions {
       return;
     }
     this.room.state.turnPhase = 'collecting';
-    this.io.to(this.room.id).emit('COLLECT_TO_CUP', { keptIndices: this.room.state.keptDiceSlots });
+    this.io.to(this.room.id).emit('COLLECT_TO_CUP', {
+      turnNumber: this.room.state.turnNumber,
+      rollId: this.room.state.rollId,
+      keptIndices: this.room.state.keptDiceSlots,
+    });
   }
 
   handleCollectionDone(playerRole: 'p1' | 'p2'): void {
@@ -98,7 +117,10 @@ export class GameActions {
     this.room.physics.spawnNonKeptDiceInCup(this.room.state.keptDiceSlots);
     this.room.state.turnPhase = 'waiting_pour';
     this.room.state.canPour = true;
-    this.io.to(this.room.id).emit('CAN_POUR');
+    this.io.to(this.room.id).emit('CAN_POUR', {
+      turnNumber: this.room.state.turnNumber,
+      rollId: this.room.state.rollId,
+    });
   }
 
   handleSubmitScore(playerRole: 'p1' | 'p2', category: string): void {
@@ -117,6 +139,8 @@ export class GameActions {
         value,
         scores: state.scores,
         nextTurn: state.currentTurn,
+        turnNumber: state.turnNumber,
+        rollId: state.rollId,
       });
       this.io.to(this.room.id).emit('GAME_OVER', {
         scores: state.scores,
@@ -125,7 +149,7 @@ export class GameActions {
       this.onGameFinished?.();
     } else {
       state.advanceTurn();
-      this.room.physics.spawnDiceInCup();
+      this.room.physics.spawnNonKeptDiceInCup(state.keptDiceSlots);
       state.canPour = true;
 
       this.io.to(this.room.id).emit('SCORE_CONFIRMED', {
@@ -134,8 +158,13 @@ export class GameActions {
         value,
         scores: state.scores,
         nextTurn: state.currentTurn,
+        turnNumber: state.turnNumber,
+        rollId: state.rollId,
       });
-      this.io.to(this.room.id).emit('CAN_POUR');
+      this.io.to(this.room.id).emit('CAN_POUR', {
+        turnNumber: state.turnNumber,
+        rollId: state.rollId,
+      });
       this.onTurnAdvanced?.();
     }
   }

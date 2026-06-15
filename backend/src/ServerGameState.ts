@@ -12,6 +12,7 @@ export class ServerGameState {
   currentTurn: 'p1' | 'p2' = 'p1';
   rollCount = 0;
   turnNumber = 1;
+  rollId = 0;
   turnPhase: TurnPhase = 'waiting_pour';
 
   currentDiceValues: number[] = [0, 0, 0, 0, 0];
@@ -57,6 +58,15 @@ export class ServerGameState {
     if (!this.canPour) return 'cannot_pour';
     if (this.turnPhase !== 'waiting_pour') return 'wrong_phase';
     return null;
+  }
+
+  validateTurnContext(turnNumber?: number): boolean {
+    return turnNumber === undefined || turnNumber === this.turnNumber;
+  }
+
+  beginRoll(): number {
+    this.rollId++;
+    return this.rollId;
   }
 
   validateKeep(playerRole: 'p1' | 'p2', dieIndex: number): boolean {
@@ -141,6 +151,7 @@ export class ServerGameState {
       currentTurn: this.currentTurn,
       rollCount: this.rollCount,
       turnNumber: this.turnNumber,
+      rollId: this.rollId,
       currentDiceValues: this.currentDiceValues,
       keptDiceSlots: this.keptDiceSlots,
       scores: this.scores,
@@ -207,6 +218,7 @@ export class ServerGameState {
     this.currentTurn = 'p1';
     this.rollCount = 0;
     this.turnNumber = 1;
+    this.rollId = 0;
     this.turnPhase = 'waiting_pour';
     this.currentDiceValues = [0, 0, 0, 0, 0];
     this.keptDiceSlots = [null, null, null, null, null];

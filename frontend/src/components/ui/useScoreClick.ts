@@ -39,12 +39,11 @@ export function useScoreClick() {
       if (cat === 'Bonus') return;
       if (s.scores[s.currentTurn][cat] !== null) return;
 
-      s.updateScore(s.currentTurn, cat, s.previewScores[cat] ?? 0);
       soundManager.play('score');
       s.setIsInPlacementMode(false);
 
       const sock = getSocket();
-      if (sock) sock.emit('SUBMIT_SCORE', { category: cat });
+      if (sock) sock.emit('SUBMIT_SCORE', { turnNumber: s.onlineTurnNumber, category: cat });
       return;
     }
 

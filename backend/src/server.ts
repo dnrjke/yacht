@@ -143,7 +143,12 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
     if (!checkRateLimit(socket.id, 'shake')) return;
     if (!room.state.isEventAllowed('CUP_SHAKE_STATE')) return;
     if (room.state.currentTurn !== role) return;
+    if (!room.state.validateTurnContext(data?.turnNumber)) return;
     if (!validateShakeState(data)) return;
+
+    room.physics.updateCupTransform(data.cupPosition, data.cupQuaternion);
+    room.physics.step();
+    room.physics.step();
 
     const opponent = roomManager.getOpponent(room, slot.playerId);
     if (opponent?.socketId) {
@@ -206,10 +211,13 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
       const ap = roomAutoPlayMap.get(room.id);
       if (ap?.isActive) ap.stop();
       room.state.reset();
-      room.physics.spawnDiceInCup();
+      room.physics.resetForNewGame();
       room.rematchFlags = { p1: false, p2: false };
       io.to(room.id).emit('REMATCH_START');
-      io.to(room.id).emit('CAN_POUR');
+      io.to(room.id).emit('CAN_POUR', {
+        turnNumber: room.state.turnNumber,
+        rollId: room.state.rollId,
+      });
       room.state.startTurnTimer();
       io.to(room.id).emit('TURN_TIMER_SYNC', { remainingMs: room.state.getRemainingMs() });
     } else {
@@ -335,7 +343,7 @@ io.on('connection', (socket) => {
       if (autoPlay.isActive) autoPlay.stop();
     };
 
-    room.physics.spawnDiceInCup();
+    room.physics.resetForNewGame();
     room.state.canPour = true;
 
     const p1 = room.players[0];
@@ -361,7 +369,10 @@ io.on('connection', (socket) => {
     if (p1Socket) bindGameEvents(p1Socket, room, p1);
     if (p2Socket) bindGameEvents(p2Socket, room, p2);
 
-    io.to(room.id).emit('CAN_POUR');
+    io.to(room.id).emit('CAN_POUR', {
+      turnNumber: room.state.turnNumber,
+      rollId: room.state.rollId,
+    });
 
     room.state.startTurnTimer();
     io.to(room.id).emit('TURN_TIMER_SYNC', { remainingMs: room.state.getRemainingMs() });

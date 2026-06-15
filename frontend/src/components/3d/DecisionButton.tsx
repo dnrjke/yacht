@@ -112,7 +112,7 @@ export function DecisionButton() {
             store.setIsReturningToCup(true);
           }
           const sock = getSocket();
-          if (sock) sock.emit('REROLL');
+          if (sock) sock.emit('REROLL', { turnNumber: store.onlineTurnNumber });
           return;
         }
 

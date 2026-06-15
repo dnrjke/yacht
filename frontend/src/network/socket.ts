@@ -1,7 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import { derivePlacementOrder, GameSnapshot } from '@yacht/core';
 import { useGameStore } from '../store/gameStore';
-import { emitPourResult } from '../physics/physicsEngine';
+import { emitPourResult, getPhysicsEngine } from '../physics/physicsEngine';
 import { getReconnectInfo, clearReconnectInfo } from './identity';
 import { pushShakeFrame, clearShakeBuffer } from './shakeBuffer';
 import { soundManager } from '../utils/soundManager';
@@ -60,33 +60,24 @@ export function connectSocket(): Socket {
     pushDebugLog('POUR_RESULT', { finalValues: result.finalValues, rollCount: result.rollCount, frames: result.diceTrajectory?.length });
     const s = useGameStore.getState();
     if (s.gameMode === 'online') {
+      if (!isCurrentTurnEvent(result.turnNumber)) return;
       s.setRollCount(result.rollCount);
-
-      if (s.currentTurn === s.myRole) {
-        // My turn: local physics already playing the animation.
-        // Only take the server's authoritative dice values.
-        s.setCurrentDiceValues(result.finalValues);
-        return;
-      }
+      s.setOnlineContext(result.turnNumber, result.rollId);
     }
-    // Opponent's turn (or local mode fallback): play the server trajectory
     emitPourResult(result);
   });
 
   socket.on('POUR_REJECTED', ({ reason }: { reason: string }) => {
     pushDebugLog('POUR_REJECTED', { reason });
     console.warn('Pour rejected:', reason);
-    const s = useGameStore.getState();
-    // Local simulation may have already started — trigger return to cup
-    s.setIsInPlacementMode(false);
-    s.setReturnReason('turnEnd');
-    s.setIsReturningToCup(true);
-    s.setCanPour(true);
+    useGameStore.getState().setCanPour(true);
   });
 
-  socket.on('KEPT_UPDATE', ({ keptDiceSlots }: { keptDiceSlots: (number | null)[] }) => {
-    pushDebugLog('KEPT_UPDATE', { keptDiceSlots });
+  socket.on('KEPT_UPDATE', ({ turnNumber, rollId, keptDiceSlots }: { turnNumber?: number; rollId?: number; keptDiceSlots: (number | null)[] }) => {
+    pushDebugLog('KEPT_UPDATE', { turnNumber, rollId, keptDiceSlots });
     const s = useGameStore.getState();
+    if (s.gameMode === 'online' && !isCurrentTurnEvent(turnNumber)) return;
+    if (s.gameMode === 'online' && typeof rollId === 'number') s.setOnlineContext(turnNumber ?? s.onlineTurnNumber, rollId);
     if (s.gameMode === 'online' && s.currentTurn !== s.myRole) {
       soundManager.play('tap', { volume: 0.4 });
     }
@@ -94,9 +85,11 @@ export function connectSocket(): Socket {
     s.setPlacementOrder(derivePlacementOrder(keptDiceSlots, s.currentDiceValues));
   });
 
-  socket.on('COLLECT_TO_CUP', () => {
-    pushDebugLog('COLLECT_TO_CUP', {});
+  socket.on('COLLECT_TO_CUP', ({ turnNumber, rollId }: { turnNumber?: number; rollId?: number } = {}) => {
+    pushDebugLog('COLLECT_TO_CUP', { turnNumber, rollId });
     const s = useGameStore.getState();
+    if (s.gameMode === 'online' && !isCurrentTurnEvent(turnNumber)) return;
+    if (s.gameMode === 'online' && typeof rollId === 'number') s.setOnlineContext(turnNumber ?? s.onlineTurnNumber, rollId);
     const isMyTurnNow = s.gameMode === 'online' && s.currentTurn === s.myRole;
     if (isMyTurnNow) return;
 
@@ -109,14 +102,20 @@ export function connectSocket(): Socket {
     }
   });
 
-  socket.on('CAN_POUR', () => {
-    pushDebugLog('CAN_POUR', {});
-    useGameStore.getState().setCanPour(true);
+  socket.on('CAN_POUR', ({ turnNumber, rollId }: { turnNumber?: number; rollId?: number } = {}) => {
+    pushDebugLog('CAN_POUR', { turnNumber, rollId });
+    const s = useGameStore.getState();
+    if (s.gameMode === 'online' && !isCurrentTurnEvent(turnNumber)) return;
+    if (s.gameMode === 'online' && typeof turnNumber === 'number' && typeof rollId === 'number') {
+      s.setOnlineContext(turnNumber, rollId);
+    }
+    s.setCanPour(true);
   });
 
-  socket.on('SCORE_CONFIRMED', ({ player, category, value, scores, nextTurn }: { player: string; category: string; value: number; scores: any; nextTurn: 'p1' | 'p2' }) => {
-    pushDebugLog('SCORE_CONFIRMED', { player, category, value, nextTurn });
+  socket.on('SCORE_CONFIRMED', ({ player, category, value, scores, nextTurn, turnNumber, rollId }: { player: string; category: string; value: number; scores: any; nextTurn: 'p1' | 'p2'; turnNumber?: number; rollId?: number }) => {
+    pushDebugLog('SCORE_CONFIRMED', { player, category, value, nextTurn, turnNumber, rollId });
     const s = useGameStore.getState();
+    if (s.gameMode === 'online' && isPastTurnEvent(turnNumber)) return;
     if (s.gameMode === 'online' && player !== s.myRole) {
       soundManager.play('score', { volume: 0.5 });
     }
@@ -132,6 +131,9 @@ export function connectSocket(): Socket {
     s.setReturnReason('turnEnd');
     s.setIsReturningToCup(true);
     s.setIsSyncingDice(true);
+    if (s.gameMode === 'online' && typeof turnNumber === 'number' && typeof rollId === 'number') {
+      s.setOnlineContext(turnNumber, rollId);
+    }
   });
 
   socket.on('REROLL_REJECTED', () => {
@@ -192,6 +194,7 @@ export function connectSocket(): Socket {
   });
 
   socket.on('OPPONENT_SHAKE_STATE', (data: any) => {
+    if (!isCurrentTurnEvent(data?.turnNumber)) return;
     pushShakeFrame(data);
   });
 
@@ -207,11 +210,14 @@ export function disconnectSocket(): void {
 
 function applySnapshot(snapshot: GameSnapshot): void {
   const s = useGameStore.getState();
-  const diceValues = (snapshot.currentDiceValues as number[]).map(v => v ?? 1);
+  const diceValues = (snapshot.currentDiceValues as number[]).map(v => (
+    Number.isInteger(v) && v >= 1 && v <= 6 ? v : 1
+  ));
   s.setCurrentDiceValues(diceValues);
   s.setKeptDiceSlots(snapshot.keptDiceSlots);
   s.setCurrentTurn(snapshot.currentTurn);
   s.setRollCount(snapshot.rollCount);
+  s.setOnlineContext(snapshot.turnNumber, snapshot.rollId);
   s.setScores(snapshot.scores);
   s.setCanPour(snapshot.canPour);
   s.setMyRole(snapshot.myRole);
@@ -224,7 +230,27 @@ function applySnapshot(snapshot: GameSnapshot): void {
 
   if (snapshot.turnPhase === 'placement') {
     s.setPlacementOrder(derivePlacementOrder(snapshot.keptDiceSlots, diceValues));
+  } else {
+    s.setPlacementOrder([0, 1, 2, 3, 4]);
+  }
+
+  const physics = getPhysicsEngine();
+  if (physics) {
+    physics.currentDiceValues = diceValues;
+    if (snapshot.turnPhase === 'waiting_pour' || snapshot.turnPhase === 'collecting') {
+      physics.spawnNonKeptDiceInCup(snapshot.keptDiceSlots);
+    }
   }
 
   s.setAutoPlayActive(snapshot.autoPlayActive);
+}
+
+function isCurrentTurnEvent(turnNumber?: number): boolean {
+  const s = useGameStore.getState();
+  return typeof turnNumber !== 'number' || turnNumber === s.onlineTurnNumber;
+}
+
+function isPastTurnEvent(turnNumber?: number): boolean {
+  const s = useGameStore.getState();
+  return typeof turnNumber === 'number' && turnNumber < s.onlineTurnNumber;
 }

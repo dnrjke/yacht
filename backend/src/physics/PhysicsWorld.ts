@@ -342,6 +342,28 @@ export class PhysicsWorld {
     this.currentDiceValues = [1, 1, 1, 1, 1];
   }
 
+  resetForNewGame(): void {
+    const { CUP_REST_X, CUP_REST_Y, CUP_REST_Z } = BOARD_CONSTANTS;
+    const cupRotation = { x: 0, y: 0, z: 0, w: 1 };
+
+    this.setCupCollidersEnabled(true);
+    this.setBorderWallsEnabled(false);
+
+    this.cupBody.setTranslation({ x: CUP_REST_X, y: CUP_REST_Y, z: CUP_REST_Z }, true);
+    this.cupBody.setRotation(cupRotation, true);
+    this.cupBody.setNextKinematicTranslation({ x: CUP_REST_X, y: CUP_REST_Y, z: CUP_REST_Z });
+    this.cupBody.setNextKinematicRotation(cupRotation);
+
+    this.cupLidBody.setTranslation({ x: CUP_REST_X, y: CUP_REST_Y + 4.5, z: CUP_REST_Z }, true);
+    this.cupLidBody.setRotation(cupRotation, true);
+    this.cupLidBody.setNextKinematicTranslation({ x: CUP_REST_X, y: CUP_REST_Y + 4.5, z: CUP_REST_Z });
+    this.cupLidBody.setNextKinematicRotation(cupRotation);
+
+    this.pendingCupPos = null;
+    this.pendingCupQuat = null;
+    this.spawnDiceInCup();
+  }
+
   spawnNonKeptDiceInCup(keptIndices: (number | null)[]): void {
     const keptSet = new Set(keptIndices.filter(i => i !== null) as number[]);
     this.keptDice = this.diceBodies.map((_, i) => keptSet.has(i));
@@ -385,8 +407,30 @@ export class PhysicsWorld {
     });
   }
 
+  reconcileDiceInCupPositions(): void {
+    const cupPos = this.cupBody.translation();
+    let cupSlot = 0;
+
+    this.diceBodies.forEach((dice, i) => {
+      if (!this.diceInCup[i] || this.keptDice[i]) return;
+
+      const off = CUP_DICE_OFFSETS[cupSlot % CUP_DICE_OFFSETS.length];
+      cupSlot++;
+
+      if (this.isDiceInsideCup(i)) return;
+
+      dice.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+      dice.setTranslation({ x: cupPos.x + off.x, y: cupPos.y + off.y, z: cupPos.z + off.z }, true);
+      dice.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      dice.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      this.snapRotationToValue(dice, this.currentDiceValues[i]);
+      dice.lockRotations(true, true);
+      dice.wakeUp();
+    });
+  }
+
   allDiceReadyToPour(): boolean {
-    return this.diceBodies.every((_, i) => this.diceInCup[i] || this.keptDice[i]);
+    return this.diceBodies.every((_, i) => this.keptDice[i] || (this.diceInCup[i] && this.isDiceInsideCup(i)));
   }
 
   // ── Cup geometry constants for dice-exit detection ──
@@ -499,6 +543,7 @@ export class PhysicsWorld {
 
       this.pendingCupPos = null;
       this.pendingCupQuat = null;
+      this.reconcileDiceInCupPositions();
     } else {
       // No cup movement pending — just step (e.g. dice settling after pour)
       for (let i = 0; i < this.subSteps; i++) {
@@ -523,6 +568,8 @@ export class PhysicsWorld {
     cupQuaternion: { x: number; y: number; z: number; w: number }
   ): PourResult {
     const { BOARD_SIZE, POUR_BOUNDARY_MARGIN, CUP_REST_X, CUP_REST_Y, CUP_REST_Z } = BOARD_CONSTANTS;
+
+    this.reconcileDiceInCupPositions();
 
     const diceTrajectory: PourResult['diceTrajectory'] = [];
     const cupTrajectory: PourResult['cupTrajectory'] = [];
@@ -578,36 +625,15 @@ export class PhysicsWorld {
       clampedPosition.z !== cupPosition.z
     );
 
-    // Teleport cup and dice to the clamped pour position.
-    // The server doesn't track shaking — dice are at rest, so teleport them
-    // into the cup at the effective pour position.
-    // For large corrections (e.g. pour from rest position), skip the slide
-    // animation entirely to avoid lag.
     const corrDx = clampedPosition.x - cupPosition.x;
     const corrDz = clampedPosition.z - cupPosition.z;
     const corrDist = needsCorrection ? Math.sqrt(corrDx * corrDx + corrDz * corrDz) : 0;
     const INSTANT_CORRECTION_THRESHOLD = 3;
 
     const effectivePos = corrDist > INSTANT_CORRECTION_THRESHOLD ? clampedPosition : cupPosition;
-    this.cupBody.setTranslation(effectivePos, true);
-    this.cupBody.setRotation(cupQuaternion, true);
-    {
-      let slot = 0;
-      this.diceBodies.forEach((dice, i) => {
-        if (this.keptDice[i]) return;
-        const off = CUP_DICE_OFFSETS[slot % CUP_DICE_OFFSETS.length];
-        dice.setTranslation({
-          x: effectivePos.x + off.x,
-          y: effectivePos.y + off.y,
-          z: effectivePos.z + off.z,
-        }, true);
-        dice.setLinvel({ x: 0, y: 0, z: 0 }, true);
-        dice.setAngvel({ x: 0, y: 0, z: 0 }, true);
-        slot++;
-      });
-    }
+    this.cupBody.setNextKinematicTranslation(effectivePos);
+    this.cupBody.setNextKinematicRotation(cupQuaternion);
 
-    // Small correction slide (walls OFF, lid ON — dice safe inside cup)
     if (needsCorrection && corrDist <= INSTANT_CORRECTION_THRESHOLD) {
       const SPEED_UNITS_PER_FRAME = 0.5;
       const correctionFrames = Math.max(10, Math.round(corrDist / SPEED_UNITS_PER_FRAME));

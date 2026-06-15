@@ -345,8 +345,30 @@ export class PhysicsWorld {
     });
   }
 
+  reconcileDiceInCupPositions(): void {
+    const cupPos = this.cupBody.translation();
+    let cupSlot = 0;
+
+    this.diceBodies.forEach((dice, i) => {
+      if (!this.diceInCup[i] || this.keptDice[i]) return;
+
+      const off = CUP_DICE_OFFSETS[cupSlot % CUP_DICE_OFFSETS.length];
+      cupSlot++;
+
+      if (this.isDiceInsideCup(i)) return;
+
+      dice.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+      dice.setTranslation({ x: cupPos.x + off.x, y: cupPos.y + off.y, z: cupPos.z + off.z }, true);
+      dice.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      dice.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      this.snapRotationToValue(dice, this.currentDiceValues[i]);
+      dice.lockRotations(true, true);
+      dice.wakeUp();
+    });
+  }
+
   allDiceReadyToPour(): boolean {
-    return this.diceBodies.every((_, i) => this.diceInCup[i] || this.keptDice[i]);
+    return this.diceBodies.every((_, i) => this.keptDice[i] || (this.diceInCup[i] && this.isDiceInsideCup(i)));
   }
 
   private static readonly CUP_INNER_RADIUS = 4.0;
@@ -443,6 +465,7 @@ export class PhysicsWorld {
 
       this.pendingCupPos = null;
       this.pendingCupQuat = null;
+      this.reconcileDiceInCupPositions();
       return true;
     }
 
@@ -472,6 +495,8 @@ export class PhysicsWorld {
     cupQuaternion: { x: number; y: number; z: number; w: number }
   ): PourResult {
     const { BOARD_SIZE, POUR_BOUNDARY_MARGIN, CUP_REST_X, CUP_REST_Y, CUP_REST_Z } = BOARD_CONSTANTS;
+
+    this.reconcileDiceInCupPositions();
 
     const diceTrajectory: PourResult['diceTrajectory'] = [];
     const cupTrajectory: PourResult['cupTrajectory'] = [];
