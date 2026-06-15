@@ -29,6 +29,7 @@ const MAX_FIXED_INPUT_STEPS = 5;
 const CUP_FOLLOW_ALPHA = 0.2;
 const OPPONENT_SHAKE_HOLD_MS = 700;
 let lastPreviewCupPlaybackTime = 0;
+let awaitingAuthoritativeCupResult = false;
 
 export function PhysicsCup() {
   const cupRef = useRef<THREE.Group>(null);
@@ -84,8 +85,16 @@ export function PhysicsCup() {
   useEffect(() => {
     const unsubPour = onPourResult((result) => {
       aiShake.current = null;
+      if (!result.preview && awaitingAuthoritativeCupResult) {
+        awaitingAuthoritativeCupResult = false;
+        lastPreviewCupPlaybackTime = 0;
+        return;
+      }
+      if (result.preview) {
+        awaitingAuthoritativeCupResult = true;
+      }
       const frames = cupRef.current && anticipation.current
-        ? buildCupBridgeFrames(cupRef.current, result.cupTrajectory)
+        ? buildCupBridgeFrames(cupRef.current, result.cupTrajectory, result.preview ? 24 : ONLINE_BRIDGE_FRAMES)
         : result.cupTrajectory;
       const FRAME_DT = 1 / 60;
       const initialTime = !result.preview && lastPreviewCupPlaybackTime > 0
@@ -461,7 +470,7 @@ function createOnlineAnticipation(cup: THREE.Group): {
   };
 }
 
-function buildCupBridgeFrames(cup: THREE.Group, trajectory: any[]): any[] {
+function buildCupBridgeFrames(cup: THREE.Group, trajectory: any[], bridgeFrameCount = ONLINE_BRIDGE_FRAMES): any[] {
   if (trajectory.length === 0) return trajectory;
 
   const first = trajectory[0];
@@ -469,8 +478,8 @@ function buildCupBridgeFrames(cup: THREE.Group, trajectory: any[]): any[] {
   _slerp.set(cup.quaternion.x, cup.quaternion.y, cup.quaternion.z, cup.quaternion.w);
   _slerpB.set(first.quaternion.x, first.quaternion.y, first.quaternion.z, first.quaternion.w);
 
-  for (let i = 1; i <= ONLINE_BRIDGE_FRAMES; i++) {
-    const t = i / ONLINE_BRIDGE_FRAMES;
+  for (let i = 1; i <= bridgeFrameCount; i++) {
+    const t = i / bridgeFrameCount;
     const eased = 1 - Math.pow(1 - t, 3);
     const q = _slerp.clone().slerp(_slerpB, eased);
     bridge.push({

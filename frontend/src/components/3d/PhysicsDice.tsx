@@ -47,7 +47,7 @@ interface RenderedDiceDebugSnapshot {
 }
 
 interface DicePlaybackDebugSnapshot {
-  status: 'idle' | 'playing' | 'waitingForServer' | 'waitingForPlacement' | 'placement';
+  status: 'idle' | 'playing' | 'waitingForServer' | 'reconciling' | 'waitingForPlacement' | 'placement';
   updatedAt: number;
   updatedAtIso: string;
   totalFrames: number;
@@ -165,6 +165,15 @@ export function PhysicsDice() {
   const isInPlacementMode = useGameStore(state => state.isInPlacementMode);
   const diceRefs = useRef<(THREE.Mesh | null)[]>([]);
   const playbackData = useRef<{ frames: any[]; time: number; preview?: boolean } | null>(null);
+  const pendingAuthoritativeResult = useRef<PourResult | null>(null);
+  const authoritativeBlend = useRef<{
+    startTime: number;
+    duration: number;
+    startPositions: THREE.Vector3[];
+    startQuaternions: THREE.Quaternion[];
+    targetFrame: any[];
+    result: PourResult;
+  } | null>(null);
   const physicsAccum = useRef(0);
   const placementTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const placementAnim = useRef<{
@@ -199,6 +208,11 @@ export function PhysicsDice() {
       if (store.isInPlacementMode) store.setIsInPlacementMode(false);
       if (store.isWaitingForPlacement) store.setIsWaitingForPlacement(false);
       if (store.isSyncingDice) store.setIsSyncingDice(false);
+
+      if (!r.preview && (playbackData.current?.preview || lastPreviewPlaybackTime > 0)) {
+        pendingAuthoritativeResult.current = r;
+        return;
+      }
 
       const FRAME_DT = 1 / 60;
       const initialTime = !r.preview && lastPreviewPlaybackTime > 0
@@ -239,9 +253,27 @@ export function PhysicsDice() {
     const store = useGameStore.getState();
     const cam = camera as THREE.PerspectiveCamera;
 
+    if (!playbackData.current && !authoritativeBlend.current && pendingAuthoritativeResult.current && lastPreviewPlaybackTime > 0) {
+      const result = pendingAuthoritativeResult.current;
+      const targetFrame = result.diceTrajectory[result.diceTrajectory.length - 1];
+      if (targetFrame) {
+        authoritativeBlend.current = {
+          startTime: clock.elapsedTime,
+          duration: 0.45,
+          startPositions: diceRefs.current.map(m => m ? m.position.clone() : new THREE.Vector3()),
+          startQuaternions: diceRefs.current.map(m => m ? m.quaternion.clone() : new THREE.Quaternion()),
+          targetFrame,
+          result,
+        };
+        pendingAuthoritativeResult.current = null;
+      }
+    }
+
     if (playbackData.current?.preview && store.canPour) {
       playbackData.current = null;
       lastPreviewPlaybackTime = 0;
+      pendingAuthoritativeResult.current = null;
+      authoritativeBlend.current = null;
       updateDicePlaybackDebugSnapshot({
         status: 'idle',
         totalFrames: 0,
@@ -249,6 +281,68 @@ export function PhysicsDice() {
         elapsedMs: 0,
         remainingMs: 0,
       });
+    }
+
+    if (authoritativeBlend.current) {
+      const blend = authoritativeBlend.current;
+      const rawT = Math.min((clock.elapsedTime - blend.startTime) / blend.duration, 1);
+      const t = easeOutCubic(rawT);
+
+      blend.targetFrame.forEach((targetState: any, idx: number) => {
+        const mesh = diceRefs.current[idx];
+        if (!mesh) return;
+        mesh.position.lerpVectors(
+          blend.startPositions[idx],
+          _targetPos.set(targetState.position.x, targetState.position.y, targetState.position.z),
+          t,
+        );
+        _lerpQA.copy(blend.startQuaternions[idx]);
+        _lerpQB.set(targetState.quaternion.x, targetState.quaternion.y, targetState.quaternion.z, targetState.quaternion.w);
+        _lerpQA.slerp(_lerpQB, t);
+        mesh.quaternion.copy(_lerpQA);
+      });
+
+      updateDicePlaybackDebugSnapshot({
+        status: 'reconciling',
+        totalFrames: blend.result.diceTrajectory.length,
+        currentFrame: blend.result.diceTrajectory.length - 1,
+        elapsedMs: Math.round(lastPreviewPlaybackTime * 1000),
+        remainingMs: Math.max(0, Math.round((1 - rawT) * blend.duration * 1000)),
+      });
+
+      if (rawT >= 1) {
+        const result = blend.result;
+        authoritativeBlend.current = null;
+        lastPreviewPlaybackTime = 0;
+        setCurrentDiceValues(result.finalValues);
+        const physics = getPhysicsEngine();
+        if (physics) physics.applyAuthoritativePourResult(result);
+        const s = useGameStore.getState();
+        s.setIsWaitingForPlacement(true);
+        placementTimer.current = setTimeout(() => {
+          const latest = useGameStore.getState();
+          latest.setIsWaitingForPlacement(false);
+          const keptSet = new Set(latest.keptDiceSlots.filter(v => v !== null));
+          const nonKeptValues = latest.currentDiceValues
+            .map((v, i) => ({ v, i }))
+            .filter(x => !keptSet.has(x.i))
+            .sort((a, b) => a.v !== b.v ? a.v - b.v : a.i - b.i)
+            .map(x => x.i);
+          latest.setPlacementOrder(nonKeptValues);
+          latest.setActiveCombo(detectCombo(latest.currentDiceValues));
+          latest.setIsInPlacementMode(true);
+          updateDicePlaybackDebugSnapshot({
+            status: 'placement',
+            totalFrames: result.diceTrajectory.length,
+            currentFrame: result.diceTrajectory.length - 1,
+            elapsedMs: Math.round(lastPreviewPlaybackTime * 1000),
+            remainingMs: 0,
+          });
+        }, 200);
+      }
+
+      updateRenderedDiceDebugSnapshot(diceRefs, camera);
+      return;
     }
 
     // Placement mode
