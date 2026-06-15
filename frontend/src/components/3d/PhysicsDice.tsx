@@ -1,6 +1,7 @@
 import { useRef, useEffect, useMemo } from 'react';
-import { useGameStore, isAiTurnNow } from '../../store/gameStore';
+import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { getPhysicsEngine, onPourResult } from '../../physics/physicsEngine';
+import { getSocket } from '../../network/socket';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import * as THREE from 'three';
 import { YACHT_CONSTANTS, BOARD_CONSTANTS, detectCombo, CUP_DICE_OFFSETS, getTraySlotPosition } from '@yacht/core';
@@ -115,8 +116,11 @@ export function PhysicsDice() {
 
       playbackData.current = { frames: r.diceTrajectory, time: 0 };
       setCurrentDiceValues(r.finalValues);
-      useGameStore.getState().incrementRollCount();
-      useGameStore.getState().setCanPour(false);
+      const s = useGameStore.getState();
+      if (s.gameMode !== 'online') {
+        s.incrementRollCount();
+      }
+      s.setCanPour(false);
     };
 
     const unsubscribe = onPourResult(handlePourResult);
@@ -285,13 +289,28 @@ export function PhysicsDice() {
         returnAnim.current = null;
         store.setIsReturningToCup(false);
 
-        const physics = getPhysicsEngine();
-        if (physics) {
-          physics.spawnNonKeptDiceInCup(store.keptDiceSlots);
+        if (store.gameMode === 'online') {
+          const isMine = store.currentTurn === store.myRole;
+          if (isMine) {
+            const physics = getPhysicsEngine();
+            if (store.returnReason === 'turnEnd') {
+              if (physics) physics.spawnDiceInCup();
+            } else {
+              if (physics) physics.spawnNonKeptDiceInCup(store.keptDiceSlots);
+              const sock = getSocket();
+              if (sock) sock.emit('COLLECTION_DONE');
+            }
+          }
+          store.setReturnReason(null);
+          store.setIsSyncingDice(false);
+        } else {
+          const physics = getPhysicsEngine();
+          if (physics) {
+            physics.spawnNonKeptDiceInCup(store.keptDiceSlots);
+          }
+          store.setIsSyncingDice(false);
+          store.setCanPour(true);
         }
-
-        store.setIsSyncingDice(false);
-        store.setCanPour(true);
       }
       return;
     }
@@ -393,15 +412,23 @@ export function PhysicsDice() {
           material={diceMaterials}
           onPointerDown={isInPlacementMode ? (e) => {
             e.stopPropagation();
-            if (isAiTurnNow()) return;
+            if (!isMyTurn()) return;
             const s = useGameStore.getState();
             const isKept = s.keptDiceSlots.includes(idx);
             if (isKept) {
               s.unkeepDie(idx);
               soundManager.play('tap_smooth');
+              if (s.gameMode === 'online') {
+                const sock = getSocket();
+                if (sock) sock.emit('UNKEEP_DIE', { dieIndex: idx });
+              }
             } else if (s.placementOrder.includes(idx)) {
               s.keepDie(idx);
               soundManager.play('tap');
+              if (s.gameMode === 'online') {
+                const sock = getSocket();
+                if (sock) sock.emit('KEEP_DIE', { dieIndex: idx });
+              }
             }
           } : undefined}
         >

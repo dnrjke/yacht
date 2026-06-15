@@ -1,8 +1,9 @@
 import { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useGameStore, isAiTurnNow } from '../../store/gameStore';
+import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { soundManager } from '../../utils/soundManager';
 import { getPhysicsEngine, emitPourResult, onPourResult, onAiPour } from '../../physics/physicsEngine';
+import { getSocket } from '../../network/socket';
 import * as THREE from 'three';
 import { BOARD_CONSTANTS } from '@yacht/core';
 
@@ -92,7 +93,19 @@ export function PhysicsCup() {
       soundManager.stopLoop('rolling_dice', 500);
 
       if (canPour) {
-        tryPourRef.current();
+        const s = useGameStore.getState();
+        if (s.gameMode === 'online') {
+          const sock = getSocket();
+          if (sock) {
+            s.setCanPour(false);
+            sock.emit('POUR_CUP', {
+              position: { x: cupRef.current!.position.x, y: cupRef.current!.position.y, z: cupRef.current!.position.z },
+              quaternion: { x: cupRef.current!.quaternion.x, y: cupRef.current!.quaternion.y, z: cupRef.current!.quaternion.z, w: cupRef.current!.quaternion.w },
+            });
+          }
+        } else {
+          tryPourRef.current();
+        }
       }
 
       isDragging.current = false;
@@ -205,7 +218,7 @@ export function PhysicsCup() {
       ref={cupRef}
       position={[CUP_REST_X, CUP_REST_Y, CUP_REST_Z]}
       onPointerDown={(e) => {
-        if (isPouring.current || aiShake.current || !canPour || isAiTurnNow()) return;
+        if (isPouring.current || aiShake.current || !canPour || !isMyTurn()) return;
         e.stopPropagation();
         isDragging.current = true;
         if (cupRef.current) prevCupPos.current.copy(cupRef.current.position);

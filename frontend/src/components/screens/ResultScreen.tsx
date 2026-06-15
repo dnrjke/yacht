@@ -3,6 +3,8 @@ import { useGameStore } from '../../store/gameStore';
 import { getTotalScore } from '@yacht/core';
 import { soundManager } from '../../utils/soundManager';
 import { useI18n } from '../../utils/useI18n';
+import { getSocket, disconnectSocket } from '../../network/socket';
+import { clearReconnectInfo } from '../../network/identity';
 
 const REVEAL_DELAY_MS = 1000;
 
@@ -24,16 +26,30 @@ export function ResultOverlay() {
     return () => clearTimeout(timer);
   }, []);
 
-  const p2Name = gameMode === 'single' ? 'AI' : 'Player 2';
+  const opponentName = useGameStore(s => s.opponentName);
+  const [rematchSent, setRematchSent] = useState(false);
+  const p2Name = gameMode === 'online' ? (opponentName ?? 'Opponent') : gameMode === 'single' ? 'AI' : 'Player 2';
   const winnerColor = winner === 'p1' ? '#4CAF50' : winner === 'p2' ? '#2196F3' : '#FFD700';
   const winnerText = winner === 'p1' ? 'Player 1 Wins!' : winner === 'p2' ? `${p2Name} Wins!` : 'Draw!';
 
   const handleRematch = () => {
+    if (gameMode === 'online') {
+      const sock = getSocket();
+      if (sock) {
+        sock.emit('REQUEST_REMATCH');
+        setRematchSent(true);
+      }
+      return;
+    }
     resetGame();
     setPhase('GAME');
   };
 
   const handleMenu = () => {
+    if (gameMode === 'online') {
+      disconnectSocket();
+      clearReconnectInfo();
+    }
     resetGame();
     setPhase('MAIN_MENU');
   };
@@ -100,17 +116,18 @@ export function ResultOverlay() {
         <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
           <button
             onClick={handleRematch}
+            disabled={rematchSent}
             style={{
               padding: '12px 28px',
               fontSize: '1rem',
-              background: '#4CAF50',
+              background: rematchSent ? '#555' : '#4CAF50',
               color: '#fff',
               border: 'none',
               borderRadius: '5px',
-              cursor: 'pointer',
+              cursor: rematchSent ? 'default' : 'pointer',
             }}
           >
-            {t('rematch')}
+            {rematchSent ? 'Waiting...' : t('rematch')}
           </button>
           <button
             onClick={handleMenu}

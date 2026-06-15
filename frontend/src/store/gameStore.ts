@@ -1,8 +1,6 @@
 import { create } from 'zustand';
-import { GamePhase, RulesCategory, SCORE_CATEGORIES, checkBonus, calculateScore, ComboResult, GAME_CONSTANTS } from '@yacht/core';
+import { GamePhase, GameMode, RulesCategory, SCORE_CATEGORIES, checkBonus, calculateScore, ComboResult, GAME_CONSTANTS, ConnectionQuality } from '@yacht/core';
 import { resetPhysicsEngineState } from '../physics/physicsEngine';
-
-export type GameMode = 'local' | 'single';
 
 interface GameState {
   phase: GamePhase;
@@ -19,11 +17,13 @@ interface GameState {
     p2: Record<RulesCategory, number | null>;
   };
   updateScore: (player: 'p1' | 'p2', category: RulesCategory, score: number) => void;
+  setScores: (scores: { p1: Record<string, number | null>; p2: Record<string, number | null> }) => void;
 
   currentDiceValues: number[];
   setCurrentDiceValues: (vals: number[]) => void;
 
   previewScores: Record<RulesCategory, number>;
+  setPreviewScores: (previews: Record<string, number>) => void;
 
   canPour: boolean;
   setCanPour: (val: boolean) => void;
@@ -42,15 +42,36 @@ interface GameState {
   keptDiceSlots: (number | null)[];
   keepDie: (dieIndex: number) => void;
   unkeepDie: (dieIndex: number) => void;
+  setKeptDiceSlots: (slots: (number | null)[]) => void;
 
   activeCombo: ComboResult | null;
   setActiveCombo: (combo: ComboResult | null) => void;
 
   currentTurn: 'p1' | 'p2';
+  setCurrentTurn: (turn: 'p1' | 'p2') => void;
   rollCount: number;
+  setRollCount: (count: number) => void;
   incrementRollCount: () => void;
   endTurn: () => void;
   resetGame: () => void;
+
+  // Online multiplayer fields
+  myRole: 'p1' | 'p2' | null;
+  setMyRole: (role: 'p1' | 'p2' | null) => void;
+  roomId: string | null;
+  setRoomId: (id: string | null) => void;
+  opponentName: string | null;
+  setOpponentName: (name: string | null) => void;
+  isConnected: boolean;
+  setIsConnected: (val: boolean) => void;
+  opponentConnectionQuality: ConnectionQuality;
+  setOpponentConnectionQuality: (q: ConnectionQuality) => void;
+  turnTimerEnd: number | null;
+  setTurnTimerEnd: (end: number | null) => void;
+  returnReason: 'turnEnd' | 'reroll' | null;
+  setReturnReason: (reason: 'turnEnd' | 'reroll' | null) => void;
+  autoPlayActive: boolean;
+  setAutoPlayActive: (active: boolean) => void;
 }
 
 const initialScores = SCORE_CATEGORIES.reduce((acc, cat) => {
@@ -85,6 +106,8 @@ export const useGameStore = create<GameState>((set) => ({
     };
   }),
 
+  setScores: (scores) => set({ scores: scores as { p1: Record<RulesCategory, number | null>; p2: Record<RulesCategory, number | null> } }),
+
   currentDiceValues: [1, 1, 1, 1, 1],
   previewScores: {} as Record<RulesCategory, number>,
   setCurrentDiceValues: (vals) => set(() => {
@@ -104,6 +127,8 @@ export const useGameStore = create<GameState>((set) => ({
     };
   }),
 
+  setPreviewScores: (previews) => set({ previewScores: previews as Record<RulesCategory, number> }),
+
   canPour: true,
   setCanPour: (canPour) => set({ canPour }),
 
@@ -119,6 +144,7 @@ export const useGameStore = create<GameState>((set) => ({
   setPlacementOrder: (placementOrder) => set({ placementOrder }),
 
   keptDiceSlots: [null, null, null, null, null],
+  setKeptDiceSlots: (slots) => set({ keptDiceSlots: slots }),
   keepDie: (dieIndex) => set((state) => {
     const newSlots = [...state.keptDiceSlots];
     const firstEmpty = newSlots.findIndex(s => s === null);
@@ -141,7 +167,9 @@ export const useGameStore = create<GameState>((set) => ({
   setActiveCombo: (activeCombo) => set({ activeCombo }),
 
   currentTurn: 'p1',
+  setCurrentTurn: (currentTurn) => set({ currentTurn }),
   rollCount: 0,
+  setRollCount: (rollCount) => set({ rollCount }),
   incrementRollCount: () => set((state) => ({
     rollCount: Math.min(state.rollCount + 1, GAME_CONSTANTS.MAX_ROLLS_PER_TURN),
   })),
@@ -177,10 +205,36 @@ export const useGameStore = create<GameState>((set) => ({
       activeCombo: null,
     });
   },
+
+  // Online multiplayer fields
+  myRole: null,
+  setMyRole: (myRole) => set({ myRole }),
+  roomId: null,
+  setRoomId: (roomId) => set({ roomId }),
+  opponentName: null,
+  setOpponentName: (opponentName) => set({ opponentName }),
+  isConnected: false,
+  setIsConnected: (isConnected) => set({ isConnected }),
+  opponentConnectionQuality: 'good' as ConnectionQuality,
+  setOpponentConnectionQuality: (opponentConnectionQuality) => set({ opponentConnectionQuality }),
+  turnTimerEnd: null,
+  setTurnTimerEnd: (turnTimerEnd) => set({ turnTimerEnd }),
+  returnReason: null,
+  setReturnReason: (returnReason) => set({ returnReason }),
+  autoPlayActive: false,
+  setAutoPlayActive: (autoPlayActive) => set({ autoPlayActive }),
 }));
 
-// 싱글 모드에서 현재가 AI(P2) 턴인지 — 이벤트 핸들러용 getState 기반 헬퍼
 export function isAiTurnNow(): boolean {
   const s = useGameStore.getState();
   return s.gameMode === 'single' && s.currentTurn === 'p2';
 }
+
+export function isMyTurn(): boolean {
+  const s = useGameStore.getState();
+  if (s.gameMode === 'online') return s.currentTurn === s.myRole;
+  if (s.gameMode === 'single') return s.currentTurn === 'p1';
+  return true;
+}
+
+export type { GameMode };

@@ -42,12 +42,16 @@ export function Scoreboard({ uiScale = 1, compact = false, supernarrow: _superna
   const pad = compact ? 4 : 10;
   const cellPadV = compact ? 3 : 10;
   const cellPadH = compact ? 4 : 8;
+  const opponentName = useGameStore(s => s.opponentName);
+  const myRole = useGameStore(s => s.myRole);
   const isSingle = gameMode === 'single';
-  const turnLabel = currentTurn === 'p1'
+  const isOnline = gameMode === 'online';
+  const isMyTurnNow = isOnline ? currentTurn === myRole : currentTurn === 'p1';
+  const turnLabel = isMyTurnNow
     ? t('myTurn')
     : isSingle ? t('aiTurn') : (compact ? t('opponentShort') : t('opponentTurn'));
-  const turnColor = currentTurn === 'p1' ? '#4CAF50' : '#2196F3';
-  const p2Label = isSingle ? 'AI' : 'P2';
+  const turnColor = isMyTurnNow ? '#4CAF50' : '#2196F3';
+  const p2Label = isOnline ? (opponentName ?? 'Opponent') : isSingle ? 'AI' : 'P2';
 
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: scaledPx(pad), background: '#1a1a1a', borderRadius: scaledPx(compact ? 4 : 8), color: '#fff', fontSize: bodyFontPx(14) }}>

@@ -1,10 +1,11 @@
 import { useRef, useMemo, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { useGameStore, isAiTurnNow } from '../../store/gameStore';
+import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { GAME_CONSTANTS } from '@yacht/core';
 import { soundManager } from '../../utils/soundManager';
 import { useI18n } from '../../utils/useI18n';
 import { getPhysicsEngine } from '../../physics/physicsEngine';
+import { getSocket } from '../../network/socket';
 import * as THREE from 'three';
 
 // Scratch vectors — reused every frame
@@ -99,9 +100,22 @@ export function DecisionButton() {
       material={material}
       onPointerDown={(e) => {
         e.stopPropagation();
-        if (disabled || isAiTurnNow()) return;
+        if (disabled || !isMyTurn()) return;
         soundManager.play('reroll');
         const store = useGameStore.getState();
+
+        if (store.gameMode === 'online') {
+          store.setIsInPlacementMode(false);
+          store.setIsSyncingDice(true);
+          store.setReturnReason('reroll');
+          if (store.placementOrder.length > 0) {
+            store.setIsReturningToCup(true);
+          }
+          const sock = getSocket();
+          if (sock) sock.emit('REROLL');
+          return;
+        }
+
         store.setIsInPlacementMode(false);
         store.setIsSyncingDice(true);
 

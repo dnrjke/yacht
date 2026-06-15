@@ -1,0 +1,186 @@
+import { io, Socket } from 'socket.io-client';
+import { derivePlacementOrder, GameSnapshot } from '@yacht/core';
+import { useGameStore } from '../store/gameStore';
+import { emitPourResult } from '../physics/physicsEngine';
+import { getReconnectInfo, clearReconnectInfo } from './identity';
+
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+
+let socket: Socket | null = null;
+
+export function getSocket(): Socket | null {
+  return socket;
+}
+
+export function connectSocket(): Socket {
+  if (socket?.connected) return socket;
+
+  socket = io(SERVER_URL, {
+    reconnection: true,
+    reconnectionAttempts: 10,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+  });
+
+  socket.on('connect', () => {
+    const s = useGameStore.getState();
+    s.setIsConnected(true);
+
+    const reconnect = getReconnectInfo();
+    if (reconnect) {
+      socket!.emit('RECONNECT', reconnect);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    useGameStore.getState().setIsConnected(false);
+  });
+
+  socket.on('RECONNECT_OK', ({ snapshot }: { snapshot: GameSnapshot }) => {
+    applySnapshot(snapshot);
+    useGameStore.getState().setPhase('GAME');
+  });
+
+  socket.on('RECONNECT_FAIL', () => {
+    clearReconnectInfo();
+    useGameStore.getState().setPhase('MAIN_MENU');
+  });
+
+  socket.on('POUR_RESULT', (result: any) => {
+    const s = useGameStore.getState();
+    if (s.gameMode === 'online') {
+      s.setRollCount(result.rollCount);
+    }
+    emitPourResult(result);
+  });
+
+  socket.on('POUR_REJECTED', ({ reason }: { reason: string }) => {
+    console.warn('Pour rejected:', reason);
+    useGameStore.getState().setCanPour(true);
+  });
+
+  socket.on('KEPT_UPDATE', ({ keptDiceSlots }: { keptDiceSlots: (number | null)[] }) => {
+    const s = useGameStore.getState();
+    s.setKeptDiceSlots(keptDiceSlots);
+    s.setPlacementOrder(derivePlacementOrder(keptDiceSlots, s.currentDiceValues));
+  });
+
+  socket.on('COLLECT_TO_CUP', () => {
+    const s = useGameStore.getState();
+    const isMyTurnNow = s.gameMode === 'online' && s.currentTurn === s.myRole;
+    if (isMyTurnNow) return; // optimistic update already started
+
+    s.setIsInPlacementMode(false);
+    s.setIsSyncingDice(true);
+    s.setReturnReason('reroll');
+    if (s.placementOrder.length > 0) {
+      s.setIsReturningToCup(true);
+    }
+  });
+
+  socket.on('CAN_POUR', () => {
+    useGameStore.getState().setCanPour(true);
+  });
+
+  socket.on('SCORE_CONFIRMED', ({ scores, nextTurn }: { player: string; category: string; value: number; scores: any; nextTurn: 'p1' | 'p2' }) => {
+    const s = useGameStore.getState();
+    s.setScores(scores);
+    s.setCurrentTurn(nextTurn);
+    s.setRollCount(0);
+    s.setKeptDiceSlots([null, null, null, null, null]);
+    s.setPreviewScores({});
+    s.setCanPour(false);
+    s.setIsInPlacementMode(false);
+    s.setActiveCombo(null);
+    s.setPlacementOrder([0, 1, 2, 3, 4]);
+    s.setReturnReason('turnEnd');
+    s.setIsReturningToCup(true);
+    s.setIsSyncingDice(true);
+  });
+
+  socket.on('REROLL_REJECTED', () => {
+    const s = useGameStore.getState();
+    s.setIsReturningToCup(false);
+    s.setIsSyncingDice(false);
+    s.setReturnReason(null);
+    s.setIsInPlacementMode(true);
+  });
+
+  socket.on('GAME_OVER', ({ scores }: { scores: any }) => {
+    const s = useGameStore.getState();
+    s.setScores(scores);
+    s.setPhase('GAME_OVER');
+  });
+
+  socket.on('TURN_TIMER_SYNC', ({ remainingMs }: { remainingMs: number }) => {
+    useGameStore.getState().setTurnTimerEnd(performance.now() + remainingMs);
+  });
+
+  socket.on('AUTO_PLAY_STARTED', () => {
+    useGameStore.getState().setAutoPlayActive(true);
+  });
+
+  socket.on('AUTO_PLAY_ENDED', () => {
+    useGameStore.getState().setAutoPlayActive(false);
+  });
+
+  socket.on('OPPONENT_DISCONNECTED', ({ gracePeriodMs }: { gracePeriodMs: number }) => {
+    console.log(`Opponent disconnected, grace period: ${gracePeriodMs}ms`);
+  });
+
+  socket.on('OPPONENT_RECONNECTED', () => {
+    console.log('Opponent reconnected');
+  });
+
+  socket.on('OPPONENT_TIMEOUT', () => {
+    console.log('Opponent timed out');
+  });
+
+  socket.on('REMATCH_REQUESTED', () => {
+    console.log('Opponent requested rematch');
+  });
+
+  socket.on('REMATCH_START', () => {
+    const s = useGameStore.getState();
+    s.resetGame();
+    s.setCanPour(false);
+    s.setPhase('GAME');
+  });
+
+  socket.on('OPPONENT_SHAKE_STATE', () => {
+    // Handled by PhysicsCup/PhysicsDice components directly
+  });
+
+  return socket;
+}
+
+export function disconnectSocket(): void {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+}
+
+function applySnapshot(snapshot: GameSnapshot): void {
+  const s = useGameStore.getState();
+  const diceValues = (snapshot.currentDiceValues as number[]).map(v => v ?? 1);
+  s.setCurrentDiceValues(diceValues);
+  s.setKeptDiceSlots(snapshot.keptDiceSlots);
+  s.setCurrentTurn(snapshot.currentTurn);
+  s.setRollCount(snapshot.rollCount);
+  s.setScores(snapshot.scores);
+  s.setCanPour(snapshot.canPour);
+  s.setMyRole(snapshot.myRole);
+  s.setOpponentName(snapshot.opponentName);
+
+  s.setIsInPlacementMode(snapshot.turnPhase === 'placement');
+  s.setIsReturningToCup(false);
+  s.setIsSyncingDice(false);
+  s.setReturnReason(null);
+
+  if (snapshot.turnPhase === 'placement') {
+    s.setPlacementOrder(derivePlacementOrder(snapshot.keptDiceSlots, diceValues));
+  }
+
+  s.setAutoPlayActive(snapshot.autoPlayActive);
+}

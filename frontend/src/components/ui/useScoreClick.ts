@@ -1,11 +1,10 @@
-import { useGameStore, isAiTurnNow } from '../../store/gameStore';
+import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { SCORE_CATEGORIES, RulesCategory } from '@yacht/core';
 import { soundManager } from '../../utils/soundManager';
+import { getSocket } from '../../network/socket';
 
 const scorableCategories = SCORE_CATEGORIES.filter(c => c !== 'Bonus');
 
-// 점수 기입 + 게임 종료 판정 + 턴 전환 로직.
-// 사람(점수판 클릭)과 AI(AiController)가 공유 — 종료 판정 이중 관리 방지.
 export function applyScoreAndAdvance(cat: RulesCategory): void {
   const s = useGameStore.getState();
   if (!s.isInPlacementMode) return;
@@ -30,10 +29,25 @@ export function applyScoreAndAdvance(cat: RulesCategory): void {
   }
 }
 
-// 점수판 클릭용 핸들러 — AI 턴엔 사람 입력 차단
 export function useScoreClick() {
   const handleScoreClick = (cat: RulesCategory) => {
-    if (isAiTurnNow()) return;
+    if (!isMyTurn()) return;
+
+    const s = useGameStore.getState();
+    if (s.gameMode === 'online') {
+      if (!s.isInPlacementMode) return;
+      if (cat === 'Bonus') return;
+      if (s.scores[s.currentTurn][cat] !== null) return;
+
+      s.updateScore(s.currentTurn, cat, s.previewScores[cat] ?? 0);
+      soundManager.play('score');
+      s.setIsInPlacementMode(false);
+
+      const sock = getSocket();
+      if (sock) sock.emit('SUBMIT_SCORE', { category: cat });
+      return;
+    }
+
     applyScoreAndAdvance(cat);
   };
 

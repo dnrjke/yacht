@@ -52,6 +52,12 @@ export function MainMenuScreen() {
         Local Play
       </button>
       <button
+        onClick={() => { setPhase('ONLINE_LOBBY'); }}
+        style={{ ...btnStyle, background: '#FF9800' }}
+      >
+        Online
+      </button>
+      <button
         onClick={() => setShowSettings(true)}
         style={{ ...btnStyle, background: '#666' }}
       >

@@ -69,7 +69,59 @@ export function getTraySlotPosition(slotIdx: number): { x: number; y: number; z:
   return { x: trayStartX + slotIdx * TRAY_SLOT_SPACING, y: 1.0, z: trayCenterZ };
 }
 
-export type GamePhase = 'LOBBY' | 'MAIN_MENU' | 'GAME' | 'GAME_OVER';
+export type GamePhase = 'LOBBY' | 'MAIN_MENU' | 'ONLINE_LOBBY' | 'GAME' | 'GAME_OVER';
+
+export type GameMode = 'local' | 'single' | 'online';
+
+export type TurnPhase =
+  | 'waiting_pour'
+  | 'simulating'
+  | 'placement'
+  | 'collecting'
+  | 'scoring';
+
+export type ConnectionQuality = 'good' | 'unstable' | 'poor';
+
+export interface PlayerIdentity {
+  playerId: string;
+  secret: string;
+  playerName: string;
+}
+
+export interface GameSnapshot {
+  currentTurn: 'p1' | 'p2';
+  rollCount: number;
+  turnNumber: number;
+  currentDiceValues: (number | null)[];
+  keptDiceSlots: (number | null)[];
+  scores: {
+    p1: Record<string, number | null>;
+    p2: Record<string, number | null>;
+  };
+  phase: 'playing' | 'finished';
+  turnPhase: TurnPhase;
+  canPour: boolean;
+  isSimulating: boolean;
+  myRole: 'p1' | 'p2';
+  opponentName: string;
+  opponentConnected: boolean;
+  autoPlayActive: boolean;
+}
+
+export function derivePlacementOrder(
+  keptDiceSlots: (number | null)[],
+  diceValues: number[]
+): number[] {
+  const keptSet = new Set(keptDiceSlots.filter((v): v is number => v !== null));
+  return [0, 1, 2, 3, 4]
+    .filter(i => !keptSet.has(i))
+    .map(i => ({ v: diceValues[i], i }))
+    .sort((a, b) => a.v !== b.v ? a.v - b.v : a.i - b.i)
+    .map(x => x.i);
+}
 
 export type { RulesCategory, ScoreBoard, ComboResult } from './scoring.js';
 export { SCORE_CATEGORIES, calculateScore, checkBonus, getUpperTotal, getTotalScore, detectCombo } from './scoring.js';
+
+export type { AiDecision } from './ai/yachtAi.js';
+export { chooseAction } from './ai/yachtAi.js';

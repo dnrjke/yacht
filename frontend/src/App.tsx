@@ -3,6 +3,7 @@ import { useGameStore } from './store/gameStore';
 import { SplashScreen } from './components/screens/SplashScreen';
 import { MainMenuScreen } from './components/screens/MainMenuScreen';
 import { GameScreen } from './components/screens/GameScreen';
+import { LobbyScreen } from './components/screens/LobbyScreen';
 
 export default function App() {
   const { phase, setIsDebug } = useGameStore();
@@ -18,6 +19,7 @@ export default function App() {
     <>
       {phase === 'LOBBY' && <SplashScreen />}
       {phase === 'MAIN_MENU' && <MainMenuScreen />}
+      {phase === 'ONLINE_LOBBY' && <LobbyScreen />}
       {(phase === 'GAME' || phase === 'GAME_OVER') && <GameScreen />}
     </>
   );

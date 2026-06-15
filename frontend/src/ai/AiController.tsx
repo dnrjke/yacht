@@ -4,7 +4,7 @@ import { GAME_CONSTANTS } from '@yacht/core';
 import { soundManager } from '../utils/soundManager';
 import { getPhysicsEngine, requestAiPour } from '../physics/physicsEngine';
 import { applyScoreAndAdvance } from '../components/ui/useScoreClick';
-import { chooseAction } from './yachtAi';
+import { chooseAction } from '@yacht/core';
 
 // 싱글 모드 AI(P2) 턴 오케스트레이터. 화면 출력 없음.
 // store 상태 전이에 반응: canPour → 붓기 요청 / placement → 키핑·리롤·기입.

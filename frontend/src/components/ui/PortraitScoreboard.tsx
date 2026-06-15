@@ -60,7 +60,7 @@ export function PortraitScoreboard({ uiScale = 1 }: Props) {
     <tr style={{ borderBottom: `${borderPx(2)} solid #555`, color: '#aaa', fontSize: secondaryFontPx(12) }}>
       <th style={{ padding: scaledPx(4), textAlign: 'left' }}>Category</th>
       <th style={{ width: scaledPx(48, 36) }}>P1</th>
-      <th style={{ width: scaledPx(48, 36) }}>{gameMode === 'single' ? 'AI' : 'P2'}</th>
+      <th style={{ width: scaledPx(48, 36) }}>{gameMode === 'online' ? (useGameStore.getState().opponentName ?? 'P2') : gameMode === 'single' ? 'AI' : 'P2'}</th>
     </tr>
   );
 

@@ -7,6 +7,8 @@ import { AiController } from '../../ai/AiController';
 import { ResultOverlay } from './ResultScreen';
 import { soundManager } from '../../utils/soundManager';
 import { useI18n } from '../../utils/useI18n';
+import { disconnectSocket } from '../../network/socket';
+import { clearReconnectInfo } from '../../network/identity';
 
 const DESKTOP_BASE_HEIGHT = 1080;
 const DESKTOP_MAX_HEIGHT = 2160;
@@ -307,7 +309,15 @@ export function GameScreen() {
             </p>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
               <button
-                onClick={() => { setShowHomeConfirm(false); setPhase('MAIN_MENU'); }}
+                onClick={() => {
+                  setShowHomeConfirm(false);
+                  const s = useGameStore.getState();
+                  if (s.gameMode === 'online') {
+                    disconnectSocket();
+                    clearReconnectInfo();
+                  }
+                  setPhase('MAIN_MENU');
+                }}
                 style={{ padding: '8px 20px', fontSize: '0.9rem', background: '#4CAF50', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
               >
                 {t('confirm')}
