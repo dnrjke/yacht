@@ -39,8 +39,13 @@ export function connectSocket(): Socket {
   });
 
   socket.on('RECONNECT_OK', ({ snapshot }: { snapshot: GameSnapshot }) => {
+    clearShakeBuffer();
     applySnapshot(snapshot);
-    useGameStore.getState().setPhase('GAME');
+    const s = useGameStore.getState();
+    s.setGameMode('online');
+    const reconnect = getReconnectInfo();
+    if (reconnect) s.setRoomId(reconnect.roomId);
+    s.setPhase(snapshot.phase === 'finished' ? 'GAME_OVER' : 'GAME');
   });
 
   socket.on('RECONNECT_FAIL', () => {
@@ -139,19 +144,22 @@ export function connectSocket(): Socket {
   });
 
   socket.on('OPPONENT_DISCONNECTED', ({ gracePeriodMs }: { gracePeriodMs: number }) => {
+    useGameStore.getState().setOpponentConnectionQuality('poor');
     console.log(`Opponent disconnected, grace period: ${gracePeriodMs}ms`);
   });
 
   socket.on('OPPONENT_RECONNECTED', () => {
+    useGameStore.getState().setOpponentConnectionQuality('good');
     console.log('Opponent reconnected');
   });
 
   socket.on('OPPONENT_TIMEOUT', () => {
-    console.log('Opponent timed out');
+    const s = useGameStore.getState();
+    s.setPhase('GAME_OVER');
   });
 
   socket.on('REMATCH_REQUESTED', () => {
-    console.log('Opponent requested rematch');
+    useGameStore.getState().setOpponentWantsRematch(true);
   });
 
   socket.on('REMATCH_START', () => {

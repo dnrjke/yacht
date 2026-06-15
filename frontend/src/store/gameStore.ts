@@ -72,6 +72,8 @@ interface GameState {
   setReturnReason: (reason: 'turnEnd' | 'reroll' | null) => void;
   autoPlayActive: 'p1' | 'p2' | null;
   setAutoPlayActive: (active: 'p1' | 'p2' | null) => void;
+  opponentWantsRematch: boolean;
+  setOpponentWantsRematch: (val: boolean) => void;
 }
 
 const initialScores = SCORE_CATEGORIES.reduce((acc, cat) => {
@@ -205,6 +207,7 @@ export const useGameStore = create<GameState>((set) => ({
       activeCombo: null,
       autoPlayActive: null,
       turnTimerEnd: null,
+      opponentWantsRematch: false,
     });
   },
 
@@ -225,6 +228,8 @@ export const useGameStore = create<GameState>((set) => ({
   setReturnReason: (returnReason) => set({ returnReason }),
   autoPlayActive: null,
   setAutoPlayActive: (autoPlayActive) => set({ autoPlayActive }),
+  opponentWantsRematch: false,
+  setOpponentWantsRematch: (opponentWantsRematch) => set({ opponentWantsRematch }),
 }));
 
 export function isAiTurnNow(): boolean {

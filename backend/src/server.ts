@@ -182,6 +182,7 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
   socket.on('COLLECTION_DONE', () => {
     if (!checkRateLimit(socket.id, 'game')) return;
     gameActions.handleFromSocket(role, 'COLLECTION_DONE', {}, socket);
+    resetTurnTimerForPlayer(room, role);
   });
 
   socket.on('SUBMIT_SCORE', (data: any) => {
@@ -340,12 +341,14 @@ io.on('connection', (socket) => {
 
     if (p1.socketId) {
       io.to(p1.socketId).emit('GAME_START', {
+        roomId: room.id,
         players: [{ name: p1.name }, { name: p2.name }],
         yourRole: 'p1',
       });
     }
     if (p2.socketId) {
       io.to(p2.socketId).emit('GAME_START', {
+        roomId: room.id,
         players: [{ name: p1.name }, { name: p2.name }],
         yourRole: 'p2',
       });

@@ -27,10 +27,15 @@ export function ResultOverlay() {
   }, []);
 
   const opponentName = useGameStore(s => s.opponentName);
+  const opponentWantsRematch = useGameStore(s => s.opponentWantsRematch);
+  const myRole = useGameStore(s => s.myRole);
   const [rematchSent, setRematchSent] = useState(false);
   const p2Name = gameMode === 'online' ? (opponentName ?? 'Opponent') : gameMode === 'single' ? 'AI' : 'Player 2';
   const winnerColor = winner === 'p1' ? '#4CAF50' : winner === 'p2' ? '#2196F3' : '#FFD700';
-  const winnerText = winner === 'p1' ? 'Player 1 Wins!' : winner === 'p2' ? `${p2Name} Wins!` : 'Draw!';
+  const isOnline = gameMode === 'online';
+  const iWin = isOnline && winner === myRole;
+  const iLose = isOnline && winner !== null && winner !== myRole;
+  const winnerText = iWin ? 'Victory!' : iLose ? `${p2Name} Wins!` : winner === 'p1' ? 'Player 1 Wins!' : winner === 'p2' ? `${p2Name} Wins!` : 'Draw!';
 
   const handleRematch = () => {
     if (gameMode === 'online') {
@@ -92,7 +97,7 @@ export function ResultOverlay() {
 
         <div style={{ display: 'flex', gap: '48px', alignItems: 'center' }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '0.9rem', color: '#999', marginBottom: '8px' }}>Player 1</div>
+            <div style={{ fontSize: '0.9rem', color: '#999', marginBottom: '8px' }}>{isOnline ? 'You' : 'Player 1'}</div>
             <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#4CAF50' }}>{p1Total}</div>
           </div>
           <div style={{ fontSize: '1.2rem', color: '#666' }}>vs</div>
@@ -113,6 +118,12 @@ export function ResultOverlay() {
           )}
         </div>
 
+        {gameMode === 'online' && opponentWantsRematch && !rematchSent && (
+          <div style={{ fontSize: '0.85rem', color: '#FFC107', textAlign: 'center' }}>
+            {opponentName ?? 'Opponent'} wants a rematch!
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
           <button
             onClick={handleRematch}
@@ -120,7 +131,7 @@ export function ResultOverlay() {
             style={{
               padding: '12px 28px',
               fontSize: '1rem',
-              background: rematchSent ? '#555' : '#4CAF50',
+              background: rematchSent ? '#555' : opponentWantsRematch ? '#FF9800' : '#4CAF50',
               color: '#fff',
               border: 'none',
               borderRadius: '5px',

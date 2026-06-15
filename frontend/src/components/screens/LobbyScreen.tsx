@@ -42,12 +42,14 @@ export function LobbyScreen() {
       setLobbyState('idle');
     };
 
-    const onGameStart = ({ players, yourRole }: { players: { name: string }[]; yourRole: 'p1' | 'p2' }) => {
+    const onGameStart = ({ roomId, players, yourRole }: { roomId: string; players: { name: string }[]; yourRole: 'p1' | 'p2' }) => {
       resetGame();
       setGameMode('online');
       setMyRole(yourRole);
+      setRoomId(roomId);
       const opIdx = yourRole === 'p1' ? 1 : 0;
       setOpponentName(players[opIdx]?.name ?? 'Opponent');
+      saveReconnectInfo(identity.current.playerId, identity.current.secret, roomId, nickname);
       setPhase('GAME');
     };
 
