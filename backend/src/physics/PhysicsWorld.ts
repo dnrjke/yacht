@@ -5,6 +5,11 @@ export interface PourResult {
   diceTrajectory: Array<Array<{ position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } }>>;
   cupTrajectory: Array<{ position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } }>;
   finalValues: number[];
+  preview?: boolean;
+  spectator?: boolean;
+  spectatorBufferMs?: number;
+  scheduledStartAt?: number;
+  serverSimMs?: number;
 }
 
 // ─── Math Utilities (replace cannon-es Vec3/Quaternion methods) ───

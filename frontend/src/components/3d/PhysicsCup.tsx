@@ -31,7 +31,7 @@ const OPPONENT_SHAKE_HOLD_MS = 700;
 let lastPreviewCupPlaybackTime = 0;
 let awaitingAuthoritativeCupResult = false;
 
-type CupPlayback = { frames: any[], time: number, preview?: boolean };
+type CupPlayback = { frames: any[], time: number, preview?: boolean, scheduledStartAt?: number };
 
 interface CupVisualDebugSnapshot {
   updatedAt: number;
@@ -48,6 +48,7 @@ interface CupVisualDebugSnapshot {
     totalFrames: number;
     elapsedMs: number;
     remainingMs: number;
+    buffering?: boolean;
   };
   lastPointerUp?: {
     at: number;
@@ -137,7 +138,7 @@ export function PhysicsCup() {
       if (!result.preview) lastPreviewCupPlaybackTime = 0;
       anticipation.current = null;
       isPouring.current = true;
-      cupPlayback.current = { frames, time: initialTime, preview: result.preview };
+      cupPlayback.current = { frames, time: initialTime, preview: result.preview, scheduledStartAt: result.scheduledStartAt };
       soundManager.stopLoop('rolling_dice', 200);
       if (result.preview || initialTime === 0) {
         soundManager.play('pouring_dice', { delay: POURING_DELAY_MS });
@@ -291,6 +292,11 @@ export function PhysicsCup() {
       const pb = cupPlayback.current;
       const lastIdx = pb.frames.length - 1;
 
+      if (pb.scheduledStartAt && performance.now() < pb.scheduledStartAt) {
+        updateCupVisualDebugSnapshot('cupPlayback', cupRef.current, pb);
+        return;
+      }
+      pb.scheduledStartAt = undefined;
       pb.time += Math.min(delta, FRAME_DT);
       if (pb.preview) lastPreviewCupPlaybackTime = pb.time;
       const fi = pb.time / FRAME_DT;
@@ -602,7 +608,10 @@ function updateCupVisualDebugSnapshot(
       currentFrame,
       totalFrames: playback.frames.length,
       elapsedMs: Math.round(playback.time * 1000),
-      remainingMs: Math.max(0, Math.round(((playback.frames.length - 1) * frameDt - playback.time) * 1000)),
+      remainingMs: playback.scheduledStartAt && performance.now() < playback.scheduledStartAt
+        ? Math.round(playback.scheduledStartAt - performance.now())
+        : Math.max(0, Math.round(((playback.frames.length - 1) * frameDt - playback.time) * 1000)),
+      buffering: Boolean(playback.scheduledStartAt && performance.now() < playback.scheduledStartAt),
     } : undefined,
     lastPointerUp: lastCupPointerUp ? {
       ...lastCupPointerUp,

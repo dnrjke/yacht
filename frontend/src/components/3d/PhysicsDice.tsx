@@ -47,7 +47,7 @@ interface RenderedDiceDebugSnapshot {
 }
 
 interface DicePlaybackDebugSnapshot {
-  status: 'idle' | 'playing' | 'waitingForServer' | 'reconciling' | 'waitingForPlacement' | 'placement';
+  status: 'idle' | 'buffering' | 'playing' | 'waitingForServer' | 'reconciling' | 'waitingForPlacement' | 'placement';
   updatedAt: number;
   updatedAtIso: string;
   totalFrames: number;
@@ -164,7 +164,7 @@ export function PhysicsDice() {
   const setCurrentDiceValues = useGameStore(state => state.setCurrentDiceValues);
   const isInPlacementMode = useGameStore(state => state.isInPlacementMode);
   const diceRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const playbackData = useRef<{ frames: any[]; time: number; preview?: boolean } | null>(null);
+  const playbackData = useRef<{ frames: any[]; time: number; preview?: boolean; scheduledStartAt?: number } | null>(null);
   const pendingAuthoritativeResult = useRef<PourResult | null>(null);
   const authoritativeBlend = useRef<{
     startTime: number;
@@ -256,13 +256,15 @@ export function PhysicsDice() {
         : 0;
       if (!r.preview) lastPreviewPlaybackTime = 0;
 
-      playbackData.current = { frames: r.diceTrajectory, time: initialTime, preview: r.preview };
+      playbackData.current = { frames: r.diceTrajectory, time: initialTime, preview: r.preview, scheduledStartAt: r.scheduledStartAt };
       updateDicePlaybackDebugSnapshot({
-        status: 'playing',
+        status: r.scheduledStartAt && performance.now() < r.scheduledStartAt ? 'buffering' : 'playing',
         totalFrames: r.diceTrajectory.length,
         currentFrame: Math.floor(initialTime / FRAME_DT),
         elapsedMs: Math.round(initialTime * 1000),
-        remainingMs: Math.max(0, Math.round(((r.diceTrajectory.length - 1) * FRAME_DT - initialTime) * 1000)),
+        remainingMs: r.scheduledStartAt && performance.now() < r.scheduledStartAt
+          ? Math.round(r.scheduledStartAt - performance.now())
+          : Math.max(0, Math.round(((r.diceTrajectory.length - 1) * FRAME_DT - initialTime) * 1000)),
       });
       if (!r.preview) setCurrentDiceValues(r.finalValues);
       const s = useGameStore.getState();
@@ -575,6 +577,18 @@ export function PhysicsDice() {
       const pb = playbackData.current;
       const lastIdx = pb.frames.length - 1;
 
+      if (pb.scheduledStartAt && performance.now() < pb.scheduledStartAt) {
+        updateDicePlaybackDebugSnapshot({
+          status: 'buffering',
+          totalFrames: pb.frames.length,
+          currentFrame: 0,
+          elapsedMs: 0,
+          remainingMs: Math.round(pb.scheduledStartAt - performance.now()),
+        });
+        updateRenderedDiceDebugSnapshot(diceRefs, camera);
+        return;
+      }
+      pb.scheduledStartAt = undefined;
       pb.time += Math.min(delta, FRAME_DT);
       const fi = pb.time / FRAME_DT;
       if (pb.preview) lastPreviewPlaybackTime = pb.time;

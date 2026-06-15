@@ -4,6 +4,7 @@ import { useGameStore } from '../store/gameStore';
 import { emitPourResult, getPhysicsEngine } from '../physics/physicsEngine';
 import { getReconnectInfo, clearReconnectInfo } from './identity';
 import { pushShakeFrame, clearShakeBuffer } from './shakeBuffer';
+import { applySpectatorPourBuffer } from './spectatorBuffer';
 import { soundManager } from '../utils/soundManager';
 import { pushDebugLog } from '../components/ui/DebugOverlay';
 
@@ -72,7 +73,17 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
       s.setRollCount(result.rollCount);
       s.setOnlineContext(result.turnNumber, result.rollId);
     }
-    emitPourResult(result);
+    const isSpectator = s.gameMode === 'online' && s.currentTurn !== s.myRole;
+    const bufferedResult = isSpectator ? applySpectatorPourBuffer(result) : result;
+    if (isSpectator) {
+      pushDebugLog('SPECTATOR_POUR_BUFFER', {
+        bufferMs: bufferedResult.spectatorBufferMs,
+        frames: bufferedResult.diceTrajectory?.length,
+        turnNumber: result.turnNumber,
+        rollId: result.rollId,
+      });
+    }
+    emitPourResult(bufferedResult);
   });
 
   socket.on('POUR_REJECTED', ({ reason }: { reason: string }) => {

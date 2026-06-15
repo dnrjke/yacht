@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { getPhysicsEngine } from '../../physics/physicsEngine';
+import { getShakeBufferDebugSnapshot } from '../../network/shakeBuffer';
+import { getSpectatorBufferDebugSnapshot } from '../../network/spectatorBuffer';
 import { getCupVisualDebugSnapshot } from '../3d/PhysicsCup';
 import { getDicePlaybackDebugSnapshot, getRenderedDiceDebugSnapshot } from '../3d/PhysicsDice';
 
@@ -11,7 +13,7 @@ interface LogEntry {
 }
 
 const MAX_LOG = 50;
-const DEBUG_SCHEMA = 'online-pour-debug-v11';
+const DEBUG_SCHEMA = 'online-pour-debug-v12';
 
 let logBuffer: LogEntry[] = [];
 let logSeq = 0;
@@ -45,6 +47,8 @@ function buildSnapshot() {
   const cupVisual = getCupVisualDebugSnapshot();
   const renderedDice = getRenderedDiceDebugSnapshot();
   const dicePlayback = getDicePlaybackDebugSnapshot();
+  const spectatorBuffer = getSpectatorBufferDebugSnapshot();
+  const shakeBuffer = getShakeBufferDebugSnapshot();
 
   const snap: Record<string, unknown> = {
     debugSchema: DEBUG_SCHEMA,
@@ -107,6 +111,9 @@ function buildSnapshot() {
       ageMs: copiedAt - dicePlayback.updatedAt,
     };
   }
+
+  snap.spectatorBuffer = spectatorBuffer;
+  snap.shakeBuffer = shakeBuffer;
 
   return snap;
 }
@@ -180,6 +187,8 @@ export function DebugOverlay() {
   const cupVisual = getCupVisualDebugSnapshot();
   const renderedDice = getRenderedDiceDebugSnapshot();
   const dicePlayback = getDicePlaybackDebugSnapshot();
+  const spectatorBuffer = getSpectatorBufferDebugSnapshot();
+  const shakeBuffer = getShakeBufferDebugSnapshot();
   const phase = getTurnPhase(s);
 
   return (
@@ -260,6 +269,12 @@ export function DebugOverlay() {
           <Row label="age" value={`${Date.now() - cupVisual.updatedAt}ms`} />
         </Section>
       )}
+
+      <Section title="Spectator Buffer">
+        <Row label="pourBuf" value={spectatorBuffer ? `${spectatorBuffer.remainingMs}ms/${spectatorBuffer.bufferMs}ms` : 'null'} />
+        <Row label="shakeBuf" value={`${shakeBuffer.size} frames ${shakeBuffer.bufferMs}ms`} />
+        <Row label="shakeAge" value={`${shakeBuffer.lastReceivedAgeMs ?? 'null'}ms`} />
+      </Section>
 
       {diceStates.length > 0 && (
         <Section title="Dice Positions">

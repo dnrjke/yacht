@@ -9,8 +9,9 @@ interface ShakeFrame {
 }
 
 const buffer: ShakeFrame[] = [];
-const BUFFER_MAX = 6;
+const BUFFER_MAX = 24;
 const STALE_MS = 900;
+const SHAKE_INTERPOLATION_DELAY_MS = 180;
 
 let lastReceived = 0;
 let cachedResult: ShakeFrame | null = null;
@@ -38,6 +39,11 @@ export function interpolateShake(): ShakeFrame | null {
     return cachedResult;
   }
 
+  const targetTime = now - SHAKE_INTERPOLATION_DELAY_MS;
+  while (buffer.length >= 2 && buffer[1].receivedAt <= targetTime) {
+    buffer.shift();
+  }
+
   const a = buffer[0];
   const b = buffer[1];
   const frameDuration = b.receivedAt - a.receivedAt;
@@ -47,7 +53,7 @@ export function interpolateShake(): ShakeFrame | null {
     return cachedResult;
   }
 
-  const elapsed = now - a.receivedAt;
+  const elapsed = Math.max(0, targetTime - a.receivedAt);
   const t = Math.min(elapsed / frameDuration, 1);
 
   if (t >= 1) {
@@ -67,6 +73,23 @@ export function isShakeActive(): boolean {
 export function clearShakeBuffer(): void {
   buffer.length = 0;
   lastReceived = 0;
+}
+
+export function getShakeBufferDebugSnapshot(): {
+  bufferMs: number;
+  size: number;
+  lastReceivedAgeMs: number | null;
+  oldestAgeMs: number | null;
+  newestAgeMs: number | null;
+} {
+  const now = performance.now();
+  return {
+    bufferMs: SHAKE_INTERPOLATION_DELAY_MS,
+    size: buffer.length,
+    lastReceivedAgeMs: lastReceived > 0 ? Math.round(now - lastReceived) : null,
+    oldestAgeMs: buffer[0] ? Math.round(now - buffer[0].receivedAt) : null,
+    newestAgeMs: buffer[buffer.length - 1] ? Math.round(now - buffer[buffer.length - 1].receivedAt) : null,
+  };
 }
 
 function lerp3(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }, t: number) {
