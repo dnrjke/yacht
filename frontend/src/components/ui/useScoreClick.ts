@@ -36,11 +36,12 @@ export function useScoreClick() {
     const s = useGameStore.getState();
     if (s.gameMode === 'online') {
       if (!s.isInPlacementMode) return;
+      if (s.isSyncingDice) return;
       if (cat === 'Bonus') return;
       if (s.scores[s.currentTurn][cat] !== null) return;
 
       soundManager.play('score');
-      s.setIsInPlacementMode(false);
+      s.setIsSyncingDice(true);
 
       const sock = getSocket();
       if (sock) sock.emit('SUBMIT_SCORE', { turnNumber: s.onlineTurnNumber, category: cat });
