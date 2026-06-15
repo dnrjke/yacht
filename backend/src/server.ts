@@ -409,13 +409,20 @@ io.on('connection', (socket) => {
     }
 
     const reconnectRole = roomManager.getPlayerRole(room, data.playerId);
-    if (reconnectRole && room.state.currentTurn === reconnectRole && !room.state.finished) {
-      const ap = roomAutoPlayMap.get(room.id);
-      if (ap?.isActive) {
-        ap.requestResume();
-      } else {
-        room.state.resumeTurnTimer();
-        io.to(room.id).emit('TURN_TIMER_SYNC', { remainingMs: room.state.getRemainingMs() });
+    if (!room.state.finished) {
+      const remainingMs = room.state.getRemainingMs();
+      if (remainingMs > 0) {
+        socket.emit('TURN_TIMER_SYNC', { remainingMs });
+      }
+
+      if (reconnectRole && room.state.currentTurn === reconnectRole) {
+        const ap = roomAutoPlayMap.get(room.id);
+        if (ap?.isActive) {
+          ap.requestResume();
+        } else {
+          room.state.resumeTurnTimer();
+          socket.emit('TURN_TIMER_SYNC', { remainingMs: room.state.getRemainingMs() });
+        }
       }
     }
 
