@@ -3,6 +3,7 @@ import { derivePlacementOrder, GameSnapshot } from '@yacht/core';
 import { useGameStore } from '../store/gameStore';
 import { emitPourResult } from '../physics/physicsEngine';
 import { getReconnectInfo, clearReconnectInfo } from './identity';
+import { pushShakeFrame, clearShakeBuffer } from './shakeBuffer';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
@@ -47,6 +48,7 @@ export function connectSocket(): Socket {
   });
 
   socket.on('POUR_RESULT', (result: any) => {
+    clearShakeBuffer();
     const s = useGameStore.getState();
     if (s.gameMode === 'online') {
       s.setRollCount(result.rollCount);
@@ -147,8 +149,8 @@ export function connectSocket(): Socket {
     s.setPhase('GAME');
   });
 
-  socket.on('OPPONENT_SHAKE_STATE', () => {
-    // Handled by PhysicsCup/PhysicsDice components directly
+  socket.on('OPPONENT_SHAKE_STATE', (data: any) => {
+    pushShakeFrame(data);
   });
 
   return socket;

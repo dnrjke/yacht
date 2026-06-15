@@ -2,6 +2,7 @@ import { useRef, useEffect, useMemo } from 'react';
 import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { getPhysicsEngine, onPourResult } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
+import { interpolateShake, isShakeActive } from '../../network/shakeBuffer';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import * as THREE from 'three';
 import { YACHT_CONSTANTS, BOARD_CONSTANTS, detectCombo, CUP_DICE_OFFSETS, getTraySlotPosition } from '@yacht/core';
@@ -366,6 +367,21 @@ export function PhysicsDice() {
           s.setActiveCombo(detectCombo(s.currentDiceValues));
           s.setIsInPlacementMode(true);
         }, 400);
+      }
+      return;
+    }
+
+    // Online opponent shake: apply interpolated dice data from network
+    if (store.gameMode === 'online' && !isMyTurn() && isShakeActive()) {
+      const frame = interpolateShake();
+      if (frame && frame.diceStates.length === 5) {
+        frame.diceStates.forEach((ds, idx) => {
+          const mesh = diceRefs.current[idx];
+          if (mesh) {
+            mesh.position.set(ds.position.x, ds.position.y, ds.position.z);
+            mesh.quaternion.set(ds.quaternion.x, ds.quaternion.y, ds.quaternion.z, ds.quaternion.w);
+          }
+        });
       }
       return;
     }

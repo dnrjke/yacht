@@ -4,6 +4,7 @@ import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { soundManager } from '../../utils/soundManager';
 import { getPhysicsEngine, emitPourResult, onPourResult, onAiPour } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
+import { interpolateShake, isShakeActive } from '../../network/shakeBuffer';
 import * as THREE from 'three';
 import { BOARD_CONSTANTS } from '@yacht/core';
 
@@ -29,6 +30,8 @@ export function PhysicsCup() {
 
   const cupPlayback = useRef<{ frames: any[], time: number } | null>(null);
   const aiShake = useRef<{ t: number; center: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const shakeEmitAccum = useRef(0);
+  const SHAKE_EMIT_INTERVAL = 1 / 30;
 
   // 사람/AI 공용 붓기 진입점 — 성공 시 PourResult가 발행되어 재생이 시작된다
   const tryPour = (): boolean => {
@@ -189,6 +192,21 @@ export function PhysicsCup() {
       return;
     }
 
+    // Opponent shake interpolation (online, not my turn)
+    const s = useGameStore.getState();
+    if (s.gameMode === 'online' && !isMyTurn() && !isDragging.current) {
+      if (isShakeActive()) {
+        const frame = interpolateShake();
+        if (frame) {
+          cupRef.current.position.set(frame.cupPosition.x, frame.cupPosition.y, frame.cupPosition.z);
+          if (frame.cupQuaternion) {
+            cupRef.current.quaternion.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
+          }
+        }
+      }
+      return;
+    }
+
     if (!isDragging.current) return;
 
     const physics = getPhysicsEngine();
@@ -210,6 +228,22 @@ export function PhysicsCup() {
         { x: cupRef.current.position.x, y: cupRef.current.position.y, z: cupRef.current.position.z },
         { x: cupRef.current.quaternion.x, y: cupRef.current.quaternion.y, z: cupRef.current.quaternion.z, w: cupRef.current.quaternion.w }
       );
+
+      // Send shake state to server for relay to opponent
+      if (s.gameMode === 'online') {
+        shakeEmitAccum.current += delta;
+        if (shakeEmitAccum.current >= SHAKE_EMIT_INTERVAL) {
+          shakeEmitAccum.current = 0;
+          const sock = getSocket();
+          if (sock) {
+            sock.emit('CUP_SHAKE_STATE', {
+              cupPosition: { x: cupRef.current.position.x, y: cupRef.current.position.y, z: cupRef.current.position.z },
+              cupQuaternion: { x: cupRef.current.quaternion.x, y: cupRef.current.quaternion.y, z: cupRef.current.quaternion.z, w: cupRef.current.quaternion.w },
+              diceStates: physics.getDiceStates(),
+            });
+          }
+        }
+      }
     }
   });
 
