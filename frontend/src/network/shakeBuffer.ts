@@ -10,7 +10,7 @@ interface ShakeFrame {
 
 const buffer: ShakeFrame[] = [];
 const BUFFER_MAX = 6;
-const STALE_MS = 250;
+const STALE_MS = 900;
 
 let lastReceived = 0;
 let cachedResult: ShakeFrame | null = null;

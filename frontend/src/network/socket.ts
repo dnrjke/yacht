@@ -15,7 +15,12 @@ export function getSocket(): Socket | null {
   return socket;
 }
 
-export function connectSocket(): Socket {
+interface ConnectSocketOptions {
+  autoReconnect?: boolean;
+}
+
+export function connectSocket(options: ConnectSocketOptions = {}): Socket {
+  const { autoReconnect = true } = options;
   if (socket?.connected) return socket;
 
   socket = io(SERVER_URL, {
@@ -30,7 +35,7 @@ export function connectSocket(): Socket {
     s.setIsConnected(true);
 
     const reconnect = getReconnectInfo();
-    if (reconnect) {
+    if (autoReconnect && reconnect) {
       socket!.emit('RECONNECT', reconnect);
     }
   });
@@ -52,7 +57,10 @@ export function connectSocket(): Socket {
 
   socket.on('RECONNECT_FAIL', () => {
     clearReconnectInfo();
-    useGameStore.getState().setPhase('MAIN_MENU');
+    const s = useGameStore.getState();
+    if (s.phase !== 'ONLINE_LOBBY') {
+      s.setPhase('MAIN_MENU');
+    }
   });
 
   socket.on('POUR_RESULT', (result: any) => {

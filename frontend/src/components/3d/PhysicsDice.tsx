@@ -46,10 +46,34 @@ interface RenderedDiceDebugSnapshot {
   cameraValues: number[];
 }
 
+interface DicePlaybackDebugSnapshot {
+  status: 'idle' | 'playing' | 'waitingForPlacement' | 'placement';
+  updatedAt: number;
+  updatedAtIso: string;
+  totalFrames: number;
+  currentFrame: number;
+  elapsedMs: number;
+  remainingMs: number;
+}
+
 let renderedDiceDebugSnapshot: RenderedDiceDebugSnapshot | null = null;
+let dicePlaybackDebugSnapshot: DicePlaybackDebugSnapshot | null = null;
 
 export function getRenderedDiceDebugSnapshot(): RenderedDiceDebugSnapshot | null {
   return renderedDiceDebugSnapshot;
+}
+
+export function getDicePlaybackDebugSnapshot(): DicePlaybackDebugSnapshot | null {
+  return dicePlaybackDebugSnapshot;
+}
+
+function updateDicePlaybackDebugSnapshot(snapshot: Omit<DicePlaybackDebugSnapshot, 'updatedAt' | 'updatedAtIso'>): void {
+  const updatedAt = Date.now();
+  dicePlaybackDebugSnapshot = {
+    ...snapshot,
+    updatedAt,
+    updatedAtIso: new Date(updatedAt).toISOString(),
+  };
 }
 
 function detectFaceValue(meshQuat: THREE.Quaternion, direction: THREE.Vector3): number {
@@ -176,6 +200,13 @@ export function PhysicsDice() {
       if (store.isSyncingDice) store.setIsSyncingDice(false);
 
       playbackData.current = { frames: r.diceTrajectory, time: 0 };
+      updateDicePlaybackDebugSnapshot({
+        status: 'playing',
+        totalFrames: r.diceTrajectory.length,
+        currentFrame: 0,
+        elapsedMs: 0,
+        remainingMs: Math.round((r.diceTrajectory.length / 60) * 1000),
+      });
       setCurrentDiceValues(r.finalValues);
       const s = useGameStore.getState();
       if (s.gameMode !== 'online') {
@@ -406,6 +437,13 @@ export function PhysicsDice() {
 
       pb.time += Math.min(delta, FRAME_DT);
       const fi = pb.time / FRAME_DT;
+      updateDicePlaybackDebugSnapshot({
+        status: 'playing',
+        totalFrames: pb.frames.length,
+        currentFrame: Math.min(Math.floor(fi), lastIdx),
+        elapsedMs: Math.round(pb.time * 1000),
+        remainingMs: Math.max(0, Math.round((lastIdx - fi) * FRAME_DT * 1000)),
+      });
 
       if (fi < lastIdx) {
         const f0 = Math.floor(fi);
@@ -430,6 +468,13 @@ export function PhysicsDice() {
       } else {
         playbackData.current = null;
         useGameStore.getState().setIsWaitingForPlacement(true);
+        updateDicePlaybackDebugSnapshot({
+          status: 'waitingForPlacement',
+          totalFrames: pb.frames.length,
+          currentFrame: lastIdx,
+          elapsedMs: Math.round(pb.time * 1000),
+          remainingMs: 400,
+        });
         placementTimer.current = setTimeout(() => {
           const s = useGameStore.getState();
           s.setIsWaitingForPlacement(false);
@@ -442,6 +487,13 @@ export function PhysicsDice() {
           s.setPlacementOrder(nonKeptValues);
           s.setActiveCombo(detectCombo(s.currentDiceValues));
           s.setIsInPlacementMode(true);
+          updateDicePlaybackDebugSnapshot({
+            status: 'placement',
+            totalFrames: pb.frames.length,
+            currentFrame: lastIdx,
+            elapsedMs: Math.round(pb.time * 1000),
+            remainingMs: 0,
+          });
         }, 400);
       }
       updateRenderedDiceDebugSnapshot(diceRefs, camera);

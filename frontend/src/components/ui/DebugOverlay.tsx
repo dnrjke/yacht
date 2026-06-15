@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { getPhysicsEngine } from '../../physics/physicsEngine';
-import { getRenderedDiceDebugSnapshot } from '../3d/PhysicsDice';
+import { getDicePlaybackDebugSnapshot, getRenderedDiceDebugSnapshot } from '../3d/PhysicsDice';
 
 interface LogEntry {
   time: number;
@@ -41,6 +41,7 @@ function buildSnapshot() {
   const diceStates = physics?.getDiceStates() ?? [];
   const copiedAt = Date.now();
   const renderedDice = getRenderedDiceDebugSnapshot();
+  const dicePlayback = getDicePlaybackDebugSnapshot();
 
   const snap: Record<string, unknown> = {
     ts: new Date(copiedAt).toISOString(),
@@ -53,6 +54,7 @@ function buildSnapshot() {
     diceValues: s.currentDiceValues,
     keptSlots: s.keptDiceSlots,
     isPlacement: s.isInPlacementMode,
+    isWaitingForPlacement: s.isWaitingForPlacement,
     isReturning: s.isReturningToCup,
     isSyncing: s.isSyncingDice,
     returnReason: s.returnReason,
@@ -85,6 +87,13 @@ function buildSnapshot() {
     snap.renderedDice = {
       ...renderedDice,
       ageMs: copiedAt - renderedDice.updatedAt,
+    };
+  }
+
+  if (dicePlayback) {
+    snap.dicePlayback = {
+      ...dicePlayback,
+      ageMs: copiedAt - dicePlayback.updatedAt,
     };
   }
 
@@ -158,6 +167,7 @@ export function DebugOverlay() {
   const physics = getPhysicsEngine();
   const diceStates = physics?.getDiceStates() ?? [];
   const renderedDice = getRenderedDiceDebugSnapshot();
+  const dicePlayback = getDicePlaybackDebugSnapshot();
   const phase = getTurnPhase(s);
 
   return (
@@ -196,6 +206,7 @@ export function DebugOverlay() {
         <Row label="roll" value={`${s.rollCount}/3`} />
         <Row label="phase" value={phase} />
         <Row label="canPour" value={s.canPour} />
+        <Row label="waitingPlace" value={s.isWaitingForPlacement} />
         <Row label="connected" value={s.isConnected} />
         <Row label="oppQuality" value={s.opponentConnectionQuality} />
         <Row label="autoPlay" value={s.autoPlayActive} />
@@ -209,6 +220,15 @@ export function DebugOverlay() {
         {renderedDice && <Row label="renderAge" value={`${Date.now() - renderedDice.updatedAt}ms`} />}
         <Row label="keptSlots" value={fmt(s.keptDiceSlots)} />
       </Section>
+
+      {dicePlayback && (
+        <Section title="Dice Playback">
+          <Row label="status" value={dicePlayback.status} />
+          <Row label="frame" value={`${dicePlayback.currentFrame}/${dicePlayback.totalFrames}`} />
+          <Row label="remaining" value={`${dicePlayback.remainingMs}ms`} warn={dicePlayback.remainingMs > 3000} />
+          <Row label="age" value={`${Date.now() - dicePlayback.updatedAt}ms`} />
+        </Section>
+      )}
 
       {diceStates.length > 0 && (
         <Section title="Dice Positions">

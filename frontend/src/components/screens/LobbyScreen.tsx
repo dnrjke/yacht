@@ -25,7 +25,7 @@ export function LobbyScreen() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const sock = connectSocket();
+    const sock = connectSocket({ autoReconnect: false });
 
     const onRoomCreated = ({ roomId, code }: { roomId: string; code: string }) => {
       setRoomCode(code);

@@ -26,6 +26,7 @@ const _cupRestPos = new THREE.Vector3(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
 const FIXED_INPUT_DT = 1 / 60;
 const MAX_FIXED_INPUT_STEPS = 5;
 const CUP_FOLLOW_ALPHA = 0.2;
+const OPPONENT_SHAKE_HOLD_MS = 700;
 
 export function PhysicsCup() {
   const cupRef = useRef<THREE.Group>(null);
@@ -50,6 +51,7 @@ export function PhysicsCup() {
   const fixedInputAccum = useRef(0);
   const shakeSeq = useRef(0);
   const opponentShakeSound = useRef(false);
+  const lastOpponentShakeAt = useRef(0);
 
   // 사람/AI 공용 붓기 진입점 — 성공 시 PourResult가 발행되어 재생이 시작된다
   const tryPour = (): boolean => {
@@ -255,16 +257,20 @@ export function PhysicsCup() {
         }
         const frame = interpolateShake();
         if (frame) {
+          lastOpponentShakeAt.current = performance.now();
           cupRef.current.position.set(frame.cupPosition.x, frame.cupPosition.y, frame.cupPosition.z);
           if (frame.cupQuaternion) {
             cupRef.current.quaternion.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
           }
         }
       } else if (opponentShakeSound.current) {
-        opponentShakeSound.current = false;
-        soundManager.stopLoop('rolling_dice', 200);
-        cupRef.current.position.lerp(_cupRestPos, Math.min(1, delta * 8));
-        cupRef.current.quaternion.slerp(_slerp.set(0, 0, 0, 1), Math.min(1, delta * 8));
+        const shouldReturnToRest = performance.now() - lastOpponentShakeAt.current > OPPONENT_SHAKE_HOLD_MS;
+        if (shouldReturnToRest) {
+          opponentShakeSound.current = false;
+          soundManager.stopLoop('rolling_dice', 200);
+          cupRef.current.position.lerp(_cupRestPos, Math.min(1, delta * 8));
+          cupRef.current.quaternion.slerp(_slerp.set(0, 0, 0, 1), Math.min(1, delta * 8));
+        }
       } else {
         cupRef.current.position.lerp(_cupRestPos, Math.min(1, delta * 8));
         cupRef.current.quaternion.slerp(_slerp.set(0, 0, 0, 1), Math.min(1, delta * 8));
