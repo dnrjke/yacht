@@ -644,8 +644,12 @@ export class PhysicsWorld {
     }
 
     if (needsCorrection && corrDist <= INSTANT_CORRECTION_THRESHOLD) {
-      const SPEED_UNITS_PER_FRAME = 0.5;
-      const correctionFrames = Math.max(10, Math.round(corrDist / SPEED_UNITS_PER_FRAME));
+      // Fast in-bounds correction. The cup slides flat from an out-of-board
+      // release back over the board before tilting; at 0.5 u/frame with a
+      // 10-frame floor this read as a ~180ms lag when released far outside.
+      // Quicker slide keeps it smooth without the perceived delay.
+      const SPEED_UNITS_PER_FRAME = 2.0;
+      const correctionFrames = Math.max(3, Math.round(corrDist / SPEED_UNITS_PER_FRAME));
       const corrEaseOut = (t: number) => 1 - (1 - t) * (1 - t);
       let corrPrevPos = { x: cupPosition.x, y: cupPosition.y, z: cupPosition.z };
       for (let f = 0; f < correctionFrames; f++) {
