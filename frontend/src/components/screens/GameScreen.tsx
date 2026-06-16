@@ -274,7 +274,7 @@ export function GameScreen() {
 
   const sceneContent = (
     <>
-      <GameScene onReady={() => setSceneReady(true)} />
+      <GameScene onReady={() => setSceneReady(true)} portrait={portrait} />
       <AiController />
       {!sceneReady && (
         <div style={{ position: 'absolute', inset: 0, background: '#1e1e1e', zIndex: 40 }} />

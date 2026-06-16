@@ -38,7 +38,7 @@ function createButtonTexture(hovered: boolean, remainingRolls: number, disabled:
   return new THREE.CanvasTexture(canvas);
 }
 
-export function DecisionButton() {
+export function DecisionButton({ portrait = false }: { portrait?: boolean }) {
   const isInPlacementMode = useGameStore(state => state.isInPlacementMode);
   const rollCount = useGameStore(state => state.rollCount);
   const placementOrder = useGameStore(state => state.placementOrder);
@@ -81,8 +81,11 @@ export function DecisionButton() {
     meshRef.current.position.copy(_center)
       .addScaledVector(_up, -visibleHeight * 0.30);
 
-    // Scale button: 20% of visible width (40% on mobile portrait), height follows 4:1 texture aspect
-    const mobileFactor = cam.aspect < 1 ? 2 : 1;
+    // Scale button: 20% of visible width, doubled in the DS portrait layout.
+    // Driven by the same `portrait` signal that toggles the DS layout (window
+    // aspect), not the canvas aspect — those diverge (e.g. tablet portrait,
+    // where the game canvas is wide while the layout is still portrait).
+    const mobileFactor = portrait ? 2 : 1;
     const btnW = visibleWidth * 0.20 * mobileFactor;
     const btnH = btnW / 4;
     meshRef.current.scale.set(btnW, btnH, 1);

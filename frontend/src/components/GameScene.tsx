@@ -57,7 +57,7 @@ function ResponsiveCameraManager() {
   return null;
 }
 
-export function GameScene({ onReady }: { onReady?: () => void }) {
+export function GameScene({ onReady, portrait = false }: { onReady?: () => void; portrait?: boolean }) {
   const [dpr, setDpr] = useState(1.5);
   const [physicsReady, setPhysicsReady] = useState(false);
 
@@ -98,7 +98,7 @@ export function GameScene({ onReady }: { onReady?: () => void }) {
       <PhysicsBoard />
       <PhysicsCup />
       <PhysicsDice />
-      <DecisionButton />
+      <DecisionButton portrait={portrait} />
       <ComboAnnouncement />
 
       <OrbitControls
