@@ -15,15 +15,9 @@ const { CUP_REST_X, CUP_REST_Y, CUP_REST_Z } = BOARD_CONSTANTS;
 const POURING_DELAY_MS = 1000;
 const AI_SHAKE_DURATION = 1.1;
 const AI_SHAKE_TIMEOUT = 5;
-const ONLINE_ANTICIPATION_DURATION = 0.18;
-const ONLINE_BRIDGE_FRAMES = 8;
 
 const _slerp = new THREE.Quaternion();
 const _slerpB = new THREE.Quaternion();
-const _anticipationStartQuat = new THREE.Quaternion();
-const _anticipationTargetQuat = new THREE.Quaternion();
-const _anticipationTilt = new THREE.Quaternion();
-const _anticipationAxis = new THREE.Vector3();
 const _cupRestPos = new THREE.Vector3(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
 const FIXED_INPUT_DT = 1 / 60;
 const MAX_FIXED_INPUT_STEPS = 5;
@@ -79,13 +73,6 @@ export function PhysicsCup() {
   const rayTarget = useRef(new THREE.Vector3());
 
   const cupPlayback = useRef<CupPlayback | null>(null);
-  const anticipation = useRef<{
-    time: number;
-    startPos: THREE.Vector3;
-    startQuat: THREE.Quaternion;
-    targetPos: THREE.Vector3;
-    targetQuat: THREE.Quaternion;
-  } | null>(null);
   const aiShake = useRef<{ t: number; center: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const fixedInputAccum = useRef(0);
   const shakeSeq = useRef(0);
@@ -129,15 +116,12 @@ export function PhysicsCup() {
       if (result.preview) {
         awaitingAuthoritativeCupResult = true;
       }
-      const frames = cupRef.current && anticipation.current && !result.preview
-        ? buildCupBridgeFrames(cupRef.current, result.cupTrajectory, ONLINE_BRIDGE_FRAMES)
-        : result.cupTrajectory;
+      const frames = result.cupTrajectory;
       const FRAME_DT = 1 / 60;
       const initialTime = !result.preview && lastPreviewCupPlaybackTime > 0
         ? Math.min(lastPreviewCupPlaybackTime, Math.max(0, (frames.length - 1) * FRAME_DT))
         : 0;
       if (!result.preview) lastPreviewCupPlaybackTime = 0;
-      anticipation.current = null;
       isPouring.current = true;
       cupPlayback.current = { frames, time: initialTime, preview: result.preview, scheduledStartAt: result.scheduledStartAt };
       soundManager.stopLoop('rolling_dice', 200);
@@ -205,7 +189,6 @@ export function PhysicsCup() {
       if (canPour) {
         if (s.gameMode === 'online') {
           s.setCanPour(false);
-          anticipation.current = createOnlineAnticipation(cupRef.current);
           if (sock) {
             const physics = getPhysicsEngine();
             const pourPos = { x: cupRef.current!.position.x, y: cupRef.current!.position.y, z: cupRef.current!.position.z };
@@ -264,7 +247,6 @@ export function PhysicsCup() {
             // If dice weren't ready, the server falls back to its own sim and
             // broadcasts POUR_RESULT to the whole room (roller included).
           } else {
-            anticipation.current = null;
             s.setCanPour(true);
             pushDebugLog('POUR_CUP_BLOCKED', { reason: 'missing_socket' });
           }
@@ -328,24 +310,6 @@ export function PhysicsCup() {
         cupRef.current.quaternion.set(0, 0, 0, 1);
       }
       updateCupVisualDebugSnapshot('cupPlayback', cupRef.current, pb);
-      return;
-    }
-
-    if (anticipation.current && useGameStore.getState().canPour) {
-      anticipation.current = null;
-      cupRef.current.position.set(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
-      cupRef.current.quaternion.set(0, 0, 0, 1);
-      updateCupVisualDebugSnapshot('cancelled', cupRef.current, null);
-      return;
-    }
-
-    if (anticipation.current) {
-      const a = anticipation.current;
-      a.time = Math.min(a.time + delta, ONLINE_ANTICIPATION_DURATION);
-      const t = 1 - Math.pow(1 - a.time / ONLINE_ANTICIPATION_DURATION, 3);
-      cupRef.current.position.lerpVectors(a.startPos, a.targetPos, t);
-      cupRef.current.quaternion.slerpQuaternions(a.startQuat, a.targetQuat, t);
-      updateCupVisualDebugSnapshot('anticipation', cupRef.current, null);
       return;
     }
 
@@ -512,65 +476,6 @@ export function PhysicsCup() {
       </mesh>
     </group>
   );
-}
-
-function createOnlineAnticipation(cup: THREE.Group): {
-  time: number;
-  startPos: THREE.Vector3;
-  startQuat: THREE.Quaternion;
-  targetPos: THREE.Vector3;
-  targetQuat: THREE.Quaternion;
-} {
-  const startPos = cup.position.clone();
-  const targetPos = startPos.clone();
-  const dx = -startPos.x;
-  const dz = -startPos.z;
-  const dist = Math.sqrt(dx * dx + dz * dz);
-
-  if (dist > 0.1) {
-    _anticipationAxis.set(dz / dist, 0, -dx / dist);
-  } else {
-    _anticipationAxis.set(0, 0, 1);
-  }
-
-  _anticipationStartQuat.copy(cup.quaternion);
-  _anticipationTilt.setFromAxisAngle(_anticipationAxis, (22 * Math.PI) / 180);
-  _anticipationTargetQuat.copy(_anticipationTilt).multiply(_anticipationStartQuat);
-
-  targetPos.y += 0.25;
-
-  return {
-    time: 0,
-    startPos,
-    startQuat: _anticipationStartQuat.clone(),
-    targetPos,
-    targetQuat: _anticipationTargetQuat.clone(),
-  };
-}
-
-function buildCupBridgeFrames(cup: THREE.Group, trajectory: any[], bridgeFrameCount = ONLINE_BRIDGE_FRAMES): any[] {
-  if (trajectory.length === 0) return trajectory;
-
-  const first = trajectory[0];
-  const bridge = [];
-  _slerp.set(cup.quaternion.x, cup.quaternion.y, cup.quaternion.z, cup.quaternion.w);
-  _slerpB.set(first.quaternion.x, first.quaternion.y, first.quaternion.z, first.quaternion.w);
-
-  for (let i = 1; i <= bridgeFrameCount; i++) {
-    const t = i / bridgeFrameCount;
-    const eased = 1 - Math.pow(1 - t, 3);
-    const q = _slerp.clone().slerp(_slerpB, eased);
-    bridge.push({
-      position: {
-        x: cup.position.x + (first.position.x - cup.position.x) * eased,
-        y: cup.position.y + (first.position.y - cup.position.y) * eased,
-        z: cup.position.z + (first.position.z - cup.position.z) * eased,
-      },
-      quaternion: { x: q.x, y: q.y, z: q.z, w: q.w },
-    });
-  }
-
-  return [...bridge, ...trajectory];
 }
 
 function updateCupVisualDebugSnapshot(

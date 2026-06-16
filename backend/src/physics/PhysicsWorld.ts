@@ -682,9 +682,8 @@ export class PhysicsWorld {
     }
 
     if (needsCorrection && corrDist <= INSTANT_CORRECTION_THRESHOLD) {
-      // Fast in-bounds correction (mirrors frontend) — slow creep read as lag.
-      const SPEED_UNITS_PER_FRAME = 2.0;
-      const correctionFrames = Math.max(3, Math.round(corrDist / SPEED_UNITS_PER_FRAME));
+      const SPEED_UNITS_PER_FRAME = 0.5;
+      const correctionFrames = Math.max(10, Math.round(corrDist / SPEED_UNITS_PER_FRAME));
       const corrEaseOut = (t: number) => 1 - (1 - t) * (1 - t);
       let corrPrevPos = { x: cupPosition.x, y: cupPosition.y, z: cupPosition.z };
       for (let f = 0; f < correctionFrames; f++) {
