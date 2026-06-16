@@ -216,12 +216,14 @@ export function PhysicsCup() {
             // replays the identical trajectory instead of a server re-sim.
             let localResult: PourResult | null = null;
             if (physics) {
+              // Final shake frame: cup + dice from the same physics snapshot.
+              const cupState = physics.getCupState();
               sock.emit('CUP_SHAKE_STATE', {
                 turnNumber: s.onlineTurnNumber,
                 seq: shakeSeq.current++,
                 clientSentAt: Date.now(),
-                cupPosition: pourPos,
-                cupQuaternion: pourQuat,
+                cupPosition: cupState.position,
+                cupQuaternion: cupState.quaternion,
                 diceStates: physics.getDiceStates(),
               });
               physics.reconcileDiceInCupPositions();
@@ -459,12 +461,17 @@ export function PhysicsCup() {
       if (s.gameMode === 'online') {
         const sock = getSocket();
         if (sock) {
+          // Send the cup and dice from the SAME physics snapshot (last step) so
+          // they stay glued for the spectator. Using the rendered cupRef here
+          // (one frame ahead of the not-yet-stepped dice) makes the dice look
+          // detached from the cup on the spectator's screen.
+          const cupState = physics.getCupState();
           sock.emit('CUP_SHAKE_STATE', {
             turnNumber: s.onlineTurnNumber,
             seq: shakeSeq.current++,
             clientSentAt: Date.now(),
-            cupPosition: { x: cupRef.current.position.x, y: cupRef.current.position.y, z: cupRef.current.position.z },
-            cupQuaternion: { x: cupRef.current.quaternion.x, y: cupRef.current.quaternion.y, z: cupRef.current.quaternion.z, w: cupRef.current.quaternion.w },
+            cupPosition: cupState.position,
+            cupQuaternion: cupState.quaternion,
             diceStates: physics.getDiceStates(),
           });
         }
