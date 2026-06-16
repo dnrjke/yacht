@@ -5,6 +5,7 @@ import { soundManager } from '../../utils/soundManager';
 import { getPhysicsEngine, emitPourResult, onPourResult, onAiPour } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
 import { interpolateShake, isShakeActive } from '../../network/shakeBuffer';
+import type { PourResult } from '../../physics/PhysicsWorld';
 import { pushDebugLog } from '../ui/DebugOverlay';
 import * as THREE from 'three';
 import { BOARD_CONSTANTS } from '@yacht/core';
@@ -207,57 +208,59 @@ export function PhysicsCup() {
           anticipation.current = createOnlineAnticipation(cupRef.current);
           if (sock) {
             const physics = getPhysicsEngine();
+            const pourPos = { x: cupRef.current!.position.x, y: cupRef.current!.position.y, z: cupRef.current!.position.z };
+            const pourQuat = { x: cupRef.current!.quaternion.x, y: cupRef.current!.quaternion.y, z: cupRef.current!.quaternion.z, w: cupRef.current!.quaternion.w };
+
+            // Client-authoritative motion: simulate the pour locally (exactly
+            // what this player sees), then ship the result so the spectator
+            // replays the identical trajectory instead of a server re-sim.
+            let localResult: PourResult | null = null;
             if (physics) {
               sock.emit('CUP_SHAKE_STATE', {
                 turnNumber: s.onlineTurnNumber,
                 seq: shakeSeq.current++,
                 clientSentAt: Date.now(),
-                cupPosition: { x: cupRef.current!.position.x, y: cupRef.current!.position.y, z: cupRef.current!.position.z },
-                cupQuaternion: { x: cupRef.current!.quaternion.x, y: cupRef.current!.quaternion.y, z: cupRef.current!.quaternion.z, w: cupRef.current!.quaternion.w },
+                cupPosition: pourPos,
+                cupQuaternion: pourQuat,
                 diceStates: physics.getDiceStates(),
               });
-            }
-            sock.emit('POUR_CUP', {
-              turnNumber: s.onlineTurnNumber,
-              position: { x: cupRef.current!.position.x, y: cupRef.current!.position.y, z: cupRef.current!.position.z },
-              quaternion: { x: cupRef.current!.quaternion.x, y: cupRef.current!.quaternion.y, z: cupRef.current!.quaternion.z, w: cupRef.current!.quaternion.w },
-            });
-            pushDebugLog('POUR_CUP_EMIT', {
-              turnNumber: s.onlineTurnNumber,
-              rollId: s.onlineRollId,
-              connected: s.isConnected,
-              pos: {
-                x: +cupRef.current!.position.x.toFixed(2),
-                y: +cupRef.current!.position.y.toFixed(2),
-                z: +cupRef.current!.position.z.toFixed(2),
-              },
-            });
-            if (physics) {
               physics.reconcileDiceInCupPositions();
               if (physics.allDiceReadyToPour()) {
-                const previewStartedAt = Date.now();
-                const preview = physics.simulatePour(
-                  {
-                    x: cupRef.current!.position.x,
-                    y: cupRef.current!.position.y,
-                    z: cupRef.current!.position.z,
-                  },
-                  {
-                    x: cupRef.current!.quaternion.x,
-                    y: cupRef.current!.quaternion.y,
-                    z: cupRef.current!.quaternion.z,
-                    w: cupRef.current!.quaternion.w,
-                  }
-                );
-                emitPourResult({ ...preview, preview: true });
-                pushDebugLog('LOCAL_PREVIEW_POUR', {
-                  frames: preview.diceTrajectory.length,
-                  simMs: Date.now() - previewStartedAt,
+                const simStartedAt = Date.now();
+                localResult = physics.simulatePour(pourPos, pourQuat);
+                pushDebugLog('LOCAL_FINAL_POUR', {
+                  frames: localResult.diceTrajectory.length,
+                  simMs: Date.now() - simStartedAt,
                 });
               } else {
                 pushDebugLog('LOCAL_PREVIEW_SKIPPED', { reason: 'dice_not_ready' });
               }
             }
+
+            sock.emit('POUR_CUP', {
+              turnNumber: s.onlineTurnNumber,
+              position: pourPos,
+              quaternion: pourQuat,
+              ...(localResult ? {
+                finalValues: localResult.finalValues,
+                diceTrajectory: localResult.diceTrajectory,
+                cupTrajectory: localResult.cupTrajectory,
+              } : {}),
+            });
+            pushDebugLog('POUR_CUP_EMIT', {
+              turnNumber: s.onlineTurnNumber,
+              rollId: s.onlineRollId,
+              connected: s.isConnected,
+              hasResult: Boolean(localResult),
+              pos: { x: +pourPos.x.toFixed(2), y: +pourPos.y.toFixed(2), z: +pourPos.z.toFixed(2) },
+            });
+
+            if (localResult) {
+              // Play our own result as final — no preview, no server reconcile.
+              emitPourResult(localResult);
+            }
+            // If dice weren't ready, the server falls back to its own sim and
+            // broadcasts POUR_RESULT to the whole room (roller included).
           } else {
             anticipation.current = null;
             s.setCanPour(true);

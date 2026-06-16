@@ -1,5 +1,32 @@
 import { Server, Socket } from 'socket.io';
 import { Room } from './RoomManager';
+import { PourResult } from './physics/PhysicsWorld';
+
+const MAX_TRAJECTORY_FRAMES = 1200;
+
+function isFrame(frame: any): boolean {
+  return Array.isArray(frame) && frame.length === 5;
+}
+
+// Validate a turn player's self-reported pour result. Anti-cheat (verifying the
+// dice physically *could* land this way) is intentionally out of scope — this is
+// a light structural/sanity gate only.
+function extractClientPourResult(data: any): PourResult | null {
+  if (!data) return null;
+  const { finalValues, diceTrajectory, cupTrajectory } = data;
+
+  if (!Array.isArray(finalValues) || finalValues.length !== 5) return null;
+  if (!finalValues.every((v: any) => Number.isInteger(v) && v >= 1 && v <= 6)) return null;
+
+  if (!Array.isArray(diceTrajectory) || diceTrajectory.length === 0) return null;
+  if (diceTrajectory.length > MAX_TRAJECTORY_FRAMES) return null;
+  if (!isFrame(diceTrajectory[0]) || !isFrame(diceTrajectory[diceTrajectory.length - 1])) return null;
+
+  if (!Array.isArray(cupTrajectory) || cupTrajectory.length === 0) return null;
+  if (cupTrajectory.length > MAX_TRAJECTORY_FRAMES) return null;
+
+  return { diceTrajectory, cupTrajectory, finalValues };
+}
 
 export class GameActions {
   onTurnAdvanced: (() => void) | null = null;
@@ -59,7 +86,7 @@ export class GameActions {
     }
   }
 
-  private handlePour(playerRole: 'p1' | 'p2', data: { position: any; quaternion: any }, socket: Socket | null): void {
+  private handlePour(playerRole: 'p1' | 'p2', data: any, socket: Socket | null): void {
     const state = this.room.state;
     const err = state.validatePour(playerRole);
     if (err) {
@@ -74,24 +101,58 @@ export class GameActions {
     const serverStartedAt = Date.now();
 
     this.beforePour?.();
-    this.room.physics.reconcileDiceInCupPositions();
-    const simStartedAt = Date.now();
-    const result = this.room.physics.simulatePour(data.position, data.quaternion);
-    const serverSimMs = Date.now() - simStartedAt;
+
+    // Client-authoritative motion: a human turn player simulates the pour
+    // locally (what they actually see) and ships the result. The server only
+    // sanity-checks it, records the value, and relays the trajectory to the
+    // spectator so both screens show the identical motion. Auto-play (socket
+    // === null) and malformed/absent client results fall back to a server
+    // simulation broadcast to the whole room.
+    const clientResult = socket ? extractClientPourResult(data) : null;
+
+    let result: PourResult;
+    let serverSimMs = 0;
+    if (clientResult) {
+      result = clientResult;
+    } else {
+      this.room.physics.reconcileDiceInCupPositions();
+      const simStartedAt = Date.now();
+      result = this.room.physics.simulatePour(data.position, data.quaternion);
+      serverSimMs = Date.now() - simStartedAt;
+    }
 
     state.rollCount++;
     state.currentDiceValues = result.finalValues;
     state.isSimulating = false;
     state.turnPhase = 'placement';
 
-    this.io.to(this.room.id).emit('POUR_RESULT', {
+    const payload = {
       ...result,
       turnNumber: state.turnNumber,
       rollId,
       rollCount: state.rollCount,
       serverStartedAt,
       serverSimMs,
-    });
+    };
+
+    if (clientResult) {
+      // Roller already played this locally — relay the trajectory to the
+      // spectator only, and send the roller a lightweight ack so it picks up
+      // the authoritative rollCount/rollId without re-playing the motion.
+      const opponent = this.room.players.find((_, index) => (
+        playerRole === 'p1' ? index === 1 : index === 0
+      ));
+      if (opponent?.socketId) {
+        this.io.to(opponent.socketId).emit('POUR_RESULT', payload);
+      }
+      socket?.emit('POUR_ACCEPTED', {
+        turnNumber: state.turnNumber,
+        rollId,
+        rollCount: state.rollCount,
+      });
+    } else {
+      this.io.to(this.room.id).emit('POUR_RESULT', payload);
+    }
   }
 
   private handleKeep(playerRole: 'p1' | 'p2', dieIndex: number): void {

@@ -3,6 +3,11 @@ import { Room } from './RoomManager';
 
 type Role = 'p1' | 'p2';
 
+interface DiceState {
+  position: { x: number; y: number; z: number };
+  quaternion: { x: number; y: number; z: number; w: number };
+}
+
 interface ShakeInput {
   role: Role;
   turnNumber?: number;
@@ -10,6 +15,7 @@ interface ShakeInput {
   clientSentAt?: number;
   cupPosition: { x: number; y: number; z: number };
   cupQuaternion: { x: number; y: number; z: number; w: number };
+  diceStates?: DiceState[];
 }
 
 const TICK_MS = 1000 / 60;
@@ -59,6 +65,9 @@ export class RoomPhysicsLoop {
     if (this.room.state.currentTurn !== input.role) return;
     if (!this.room.state.validateTurnContext(input.turnNumber)) return;
 
+    // Keep server physics roughly in sync (fallback for auto-play takeover),
+    // but the spectator is shown the TURN PLAYER's actual transmitted motion —
+    // not a server re-simulation — so both screens match.
     this.room.physics.updateCupTransform(input.cupPosition, input.cupQuaternion);
     this.room.physics.step();
 
@@ -66,15 +75,14 @@ export class RoomPhysicsLoop {
       input.role === 'p1' ? index === 1 : index === 0
     ));
     if (opponent?.socketId) {
-      const cupState = this.room.physics.getCupState();
       this.io.to(opponent.socketId).emit('OPPONENT_SHAKE_STATE', {
         turnNumber: input.turnNumber,
         seq: input.seq,
         clientSentAt: input.clientSentAt,
         serverSentAt: Date.now(),
-        cupPosition: cupState.position,
-        cupQuaternion: cupState.quaternion,
-        diceStates: this.room.physics.getDiceStates(),
+        cupPosition: input.cupPosition,
+        cupQuaternion: input.cupQuaternion,
+        diceStates: input.diceStates ?? this.room.physics.getDiceStates(),
       });
     }
   }

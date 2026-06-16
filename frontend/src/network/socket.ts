@@ -86,6 +86,16 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
     emitPourResult(bufferedResult);
   });
 
+  socket.on('POUR_ACCEPTED', ({ turnNumber, rollId, rollCount }: { turnNumber?: number; rollId?: number; rollCount: number }) => {
+    pushDebugLog('POUR_ACCEPTED', { turnNumber, rollId, rollCount });
+    const s = useGameStore.getState();
+    if (s.gameMode === 'online' && !isCurrentTurnEvent(turnNumber)) return;
+    s.setRollCount(rollCount);
+    if (s.gameMode === 'online' && typeof turnNumber === 'number' && typeof rollId === 'number') {
+      s.setOnlineContext(turnNumber, rollId);
+    }
+  });
+
   socket.on('POUR_REJECTED', ({ reason }: { reason: string }) => {
     pushDebugLog('POUR_REJECTED', { reason });
     console.warn('Pour rejected:', reason);

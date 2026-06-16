@@ -88,6 +88,14 @@ function trackPing(socket: Socket, rttMs: number): void {
   }
 }
 
+function isFiniteVec3(v: any): boolean {
+  return v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
+}
+
+function isFiniteQuat(q: any): boolean {
+  return q && Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.z) && Number.isFinite(q.w);
+}
+
 function validateShakeState(data: any): boolean {
   if (!data || !data.cupPosition || !data.diceStates) return false;
   const { BOARD_SIZE, CUP_REST_X, CUP_REST_Z } = BOARD_CONSTANTS;
@@ -97,6 +105,10 @@ function validateShakeState(data: any): boolean {
   if (Math.abs(data.cupPosition.z) > bound) return false;
   if (data.cupPosition.y < 0 || data.cupPosition.y > 30) return false;
   if (!Array.isArray(data.diceStates) || data.diceStates.length !== 5) return false;
+  // These dice states are relayed to the opponent verbatim — sanity-check them.
+  for (const ds of data.diceStates) {
+    if (!isFiniteVec3(ds?.position) || !isFiniteQuat(ds?.quaternion)) return false;
+  }
   return true;
 }
 
@@ -159,6 +171,7 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
       clientSentAt: data.clientSentAt,
       cupPosition: data.cupPosition,
       cupQuaternion: data.cupQuaternion,
+      diceStates: data.diceStates,
     });
   });
 
