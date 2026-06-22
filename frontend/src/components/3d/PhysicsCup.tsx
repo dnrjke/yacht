@@ -4,7 +4,7 @@ import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { soundManager } from '../../utils/soundManager';
 import { getPhysicsEngine, emitPourResult, onPourResult, onAiPour } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
-import { interpolateShake, isShakeActive } from '../../network/shakeBuffer';
+import { interpolateShake, isShakeActive, getShakeConsumeState } from '../../network/shakeBuffer';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import { pushDebugLog } from '../ui/DebugOverlay';
 import * as THREE from 'three';
@@ -66,6 +66,8 @@ interface FrameSample {
   px: number; py: number; pz: number;
   qx: number; qy: number; qz: number; qw: number;
   src: string;
+  bufSz?: number;   // shakeBuffer size at this frame (opponentShake only)
+  consumeT?: number; // interpolation t value (opponentShake only)
 }
 
 const FRAME_RING_SIZE = 180;
@@ -75,12 +77,14 @@ let prevSource: string = '';
 const phaseTransitions: Array<{ from: string; to: string; at: number }> = [];
 const MAX_TRANSITIONS = 20;
 
-function recordFrame(cup: THREE.Group, source: string): void {
+function recordFrame(cup: THREE.Group, source: string, bufInfo?: { bufSz: number; consumeT: number }): void {
   const sample: FrameSample = {
     t: performance.now(),
     px: cup.position.x, py: cup.position.y, pz: cup.position.z,
     qx: cup.quaternion.x, qy: cup.quaternion.y, qz: cup.quaternion.z, qw: cup.quaternion.w,
     src: source,
+    bufSz: bufInfo?.bufSz,
+    consumeT: bufInfo?.consumeT,
   };
   if (frameRing.length < FRAME_RING_SIZE) {
     frameRing.push(sample);
@@ -168,7 +172,10 @@ export function getCupFrameTrace() {
     ordered.push(frameRing[(frameRingIdx + i) % len]);
   }
 
-  const freezes: Array<{ startIdx: number; frames: number; durationMs: number; source: string }> = [];
+  const freezes: Array<{
+    startIdx: number; frames: number; durationMs: number; source: string;
+    bufSzRange?: { min: number; max: number };
+  }> = [];
   let freezeStart = -1;
   let freezeCount = 0;
   for (let i = 1; i < ordered.length; i++) {
@@ -183,11 +190,18 @@ export function getCupFrameTrace() {
       freezeCount++;
     } else if (freezeStart >= 0) {
       if (freezeCount >= 3) {
+        // Collect buffer sizes during the freeze span
+        let bufMin = Infinity, bufMax = -Infinity, hasBuf = false;
+        for (let fi = freezeStart; fi < i; fi++) {
+          const bs = ordered[fi].bufSz;
+          if (bs !== undefined) { bufMin = Math.min(bufMin, bs); bufMax = Math.max(bufMax, bs); hasBuf = true; }
+        }
         freezes.push({
           startIdx: freezeStart,
           frames: freezeCount + 1,
           durationMs: Math.round(ordered[i - 1].t - ordered[freezeStart].t),
           source: ordered[freezeStart].src,
+          bufSzRange: hasBuf ? { min: bufMin, max: bufMax } : undefined,
         });
       }
       freezeStart = -1;
@@ -196,23 +210,50 @@ export function getCupFrameTrace() {
   }
   if (freezeStart >= 0 && freezeCount >= 3) {
     const last = ordered[ordered.length - 1];
+    let bufMin = Infinity, bufMax = -Infinity, hasBuf = false;
+    for (let fi = freezeStart; fi < ordered.length; fi++) {
+      const bs = ordered[fi].bufSz;
+      if (bs !== undefined) { bufMin = Math.min(bufMin, bs); bufMax = Math.max(bufMax, bs); hasBuf = true; }
+    }
     freezes.push({
       startIdx: freezeStart,
       frames: freezeCount + 1,
       durationMs: Math.round(last.t - ordered[freezeStart].t),
       source: ordered[freezeStart].src,
+      bufSzRange: hasBuf ? { min: bufMin, max: bufMax } : undefined,
     });
   }
 
   const frameGaps = ordered.slice(1).map((b, i) => Math.round(b.t - ordered[i].t));
   const sortedGaps = [...frameGaps].sort((a, b) => a - b);
 
+  // Per-frame position speed (distance/dt) for shake frames — detects jerky bursts
+  const shakeSpeeds: number[] = [];
+  for (let i = 1; i < ordered.length; i++) {
+    const a = ordered[i - 1], b = ordered[i];
+    if (a.src !== 'opponentShake' && a.src !== 'shakeHold') continue;
+    if (b.src !== 'opponentShake' && b.src !== 'shakeHold') continue;
+    const dt = b.t - a.t;
+    if (dt <= 0) continue;
+    const dx = b.px - a.px, dy = b.py - a.py, dz = b.pz - a.pz;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    shakeSpeeds.push(+(dist / (dt / 1000)).toFixed(1)); // units/sec
+  }
+  const sortedSpeeds = [...shakeSpeeds].sort((a, b) => a - b);
+
   return {
     totalFrames: ordered.length,
     frameGap: sortedGaps.length > 0 ? {
       min: sortedGaps[0],
       median: sortedGaps[Math.floor(sortedGaps.length / 2)],
+      p95: sortedGaps[Math.floor(sortedGaps.length * 0.95)],
       max: sortedGaps[sortedGaps.length - 1],
+    } : null,
+    shakeSpeed: sortedSpeeds.length > 0 ? {
+      min: sortedSpeeds[0],
+      median: sortedSpeeds[Math.floor(sortedSpeeds.length / 2)],
+      p95: sortedSpeeds[Math.floor(sortedSpeeds.length * 0.95)],
+      max: sortedSpeeds[sortedSpeeds.length - 1],
     } : null,
     freezes,
     phaseTransitions: phaseTransitions.map(t => ({
@@ -532,7 +573,7 @@ export function PhysicsCup() {
           if (frame.cupQuaternion) {
             cupRef.current.quaternion.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
           }
-          updateCupVisualDebugSnapshot('opponentShake', cupRef.current, null);
+          updateCupVisualDebugSnapshot('opponentShake', cupRef.current, null, getShakeConsumeState());
         }
       } else if (opponentShakeSound.current) {
         const shouldReturnToRest = performance.now() - lastOpponentShakeAt.current > OPPONENT_SHAKE_HOLD_MS;
@@ -647,8 +688,9 @@ function updateCupVisualDebugSnapshot(
   source: CupVisualDebugSnapshot['source'],
   cup: THREE.Group,
   playback: CupPlayback | null,
+  bufInfo?: { bufSz: number; consumeT: number },
 ): void {
-  recordFrame(cup, source);
+  recordFrame(cup, source, bufInfo);
   const updatedAt = Date.now();
   const physicsCup = getPhysicsEngine()?.getCupState();
   const dx = physicsCup ? cup.position.x - physicsCup.position.x : 0;

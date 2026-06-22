@@ -27,6 +27,9 @@ interface ShakeMetrics {
   lastArrival: number;
   lastConsumeT: number;
   bufferSizeAtConsume: number[];
+  seqGaps: number[];          // seq jumps >1 (missed frames from sender/network)
+  driftResets: number;        // times seqBase was reset due to >MAX_DRIFT_MS
+  lastSeq: number;            // last received seq number
 }
 
 const metrics: ShakeMetrics = {
@@ -36,6 +39,9 @@ const metrics: ShakeMetrics = {
   lastArrival: 0,
   lastConsumeT: 0,
   bufferSizeAtConsume: [],
+  seqGaps: [],
+  driftResets: 0,
+  lastSeq: -1,
 };
 
 export function getShakeMetrics() {
@@ -59,6 +65,8 @@ export function getShakeMetrics() {
       mean: +(sizes.reduce((a, b) => a + b, 0) / sizes.length).toFixed(1),
     } : null,
     lastConsumeT: +metrics.lastConsumeT.toFixed(3),
+    seqGaps: metrics.seqGaps.length > 0 ? [...metrics.seqGaps] : null,
+    driftResets: metrics.driftResets,
   };
 }
 
@@ -69,6 +77,9 @@ export function resetShakeMetrics(): void {
   metrics.lastArrival = 0;
   metrics.lastConsumeT = 0;
   metrics.bufferSizeAtConsume.length = 0;
+  metrics.seqGaps.length = 0;
+  metrics.driftResets = 0;
+  metrics.lastSeq = -1;
 }
 
 export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: number }): void {
@@ -81,11 +92,18 @@ export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: nu
   let receivedAt: number;
   const seq = (data as any).seq;
   if (typeof seq === 'number') {
+    // Track seq gaps (missed frames from sender or network drops)
+    if (metrics.lastSeq >= 0 && seq > metrics.lastSeq + 1) {
+      metrics.seqGaps.push(seq - metrics.lastSeq - 1);
+    }
+    metrics.lastSeq = seq;
+
     if (!seqBase) {
       seqBase = { seq, time: now };
     }
     receivedAt = seqBase.time + (seq - seqBase.seq) * FRAME_DT;
     if (Math.abs(receivedAt - now) > MAX_DRIFT_MS) {
+      metrics.driftResets++;
       seqBase = { seq, time: now };
       receivedAt = now;
     }
@@ -163,6 +181,11 @@ export function clearShakeBuffer(): void {
   buffer.length = 0;
   lastReceived = 0;
   seqBase = null;
+}
+
+/** Returns the current buffer size and last interpolation t. Cheap — no allocations. */
+export function getShakeConsumeState(): { bufSz: number; consumeT: number } {
+  return { bufSz: buffer.length, consumeT: +metrics.lastConsumeT.toFixed(3) };
 }
 
 export function getShakeBufferDebugSnapshot(): {

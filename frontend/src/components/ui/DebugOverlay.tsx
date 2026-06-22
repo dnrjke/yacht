@@ -13,7 +13,7 @@ interface LogEntry {
 }
 
 const MAX_LOG = 50;
-const DEBUG_SCHEMA = 'online-pour-debug-v15';
+const DEBUG_SCHEMA = 'online-pour-debug-v16';
 
 let logBuffer: LogEntry[] = [];
 let logSeq = 0;
@@ -314,6 +314,17 @@ export function DebugOverlay() {
         <Row label="pourBuf" value={spectatorBuffer ? `${spectatorBuffer.remainingMs}ms/${spectatorBuffer.bufferMs}ms` : 'null'} />
         <Row label="shakeBuf" value={`${shakeBuffer.size} frames ${shakeBuffer.bufferMs}ms`} />
         <Row label="shakeAge" value={`${shakeBuffer.lastReceivedAgeMs ?? 'null'}ms`} />
+        {(() => {
+          const sm = getShakeMetrics();
+          if (sm.totalFrames === 0) return null;
+          return (
+            <>
+              <Row label="seqGaps" value={sm.seqGaps ? sm.seqGaps.join(',') : 'none'} warn={sm.seqGaps !== null} />
+              <Row label="driftRst" value={sm.driftResets} warn={sm.driftResets > 0} />
+              <Row label="underruns" value={sm.underruns} warn={sm.underruns > 2} />
+            </>
+          );
+        })()}
       </Section>
 
       {diceStates.length > 0 && (
