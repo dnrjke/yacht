@@ -9,9 +9,9 @@ interface ShakeFrame {
 }
 
 const buffer: ShakeFrame[] = [];
-const BUFFER_MAX = 24;
+const BUFFER_MAX = 30;
 const STALE_MS = 900;
-const SHAKE_INTERPOLATION_DELAY_MS = 180;
+const SHAKE_INTERPOLATION_DELAY_MS = 250;
 const FRAME_DT = 1000 / 60;
 const MAX_DRIFT_MS = 500;
 
@@ -19,6 +19,10 @@ let lastReceived = 0;
 let cachedResult: ShakeFrame | null = null;
 let cacheTime = 0;
 let seqBase: { seq: number; time: number } | null = null;
+
+/** Previous two consumed frames — used for velocity extrapolation on underrun */
+let prevConsumedA: ShakeFrame | null = null;
+let prevConsumedB: ShakeFrame | null = null;
 
 interface ShakeMetrics {
   arrivalGaps: number[];
@@ -138,12 +142,50 @@ export function interpolateShake(): ShakeFrame | null {
 
   const targetTime = now - SHAKE_INTERPOLATION_DELAY_MS;
   while (buffer.length >= 2 && buffer[1].receivedAt <= targetTime) {
-    buffer.shift();
+    const consumed = buffer.shift()!;
+    prevConsumedA = prevConsumedB;
+    prevConsumedB = consumed;
   }
 
   if (buffer.length < 2) {
     metrics.underruns++;
     metrics.bufferSizeAtConsume.push(buffer.length);
+    // Extrapolate from the last two consumed frames instead of freezing position
+    if (prevConsumedA && prevConsumedB) {
+      const dt = prevConsumedB.receivedAt - prevConsumedA.receivedAt;
+      if (dt > 0) {
+        const elapsed = now - prevConsumedB.receivedAt;
+        // Extrapolate up to 2 frame durations, then hold
+        const extrapT = Math.min(elapsed / dt, 2);
+        // Dampen extrapolation as it gets further from known data
+        const dampen = Math.max(0, 1 - extrapT * 0.5);
+        cachedResult = {
+          cupPosition: {
+            x: prevConsumedB.cupPosition.x + (prevConsumedB.cupPosition.x - prevConsumedA.cupPosition.x) * extrapT * dampen,
+            y: prevConsumedB.cupPosition.y + (prevConsumedB.cupPosition.y - prevConsumedA.cupPosition.y) * extrapT * dampen,
+            z: prevConsumedB.cupPosition.z + (prevConsumedB.cupPosition.z - prevConsumedA.cupPosition.z) * extrapT * dampen,
+          },
+          cupQuaternion: slerpQuat(
+            prevConsumedA.cupQuaternion,
+            prevConsumedB.cupQuaternion,
+            1 + extrapT * dampen,
+          ),
+          diceStates: prevConsumedB.diceStates.map((dsB, i) => {
+            const dsA = prevConsumedA!.diceStates[i];
+            return {
+              position: {
+                x: dsB.position.x + (dsB.position.x - dsA.position.x) * extrapT * dampen,
+                y: dsB.position.y + (dsB.position.y - dsA.position.y) * extrapT * dampen,
+                z: dsB.position.z + (dsB.position.z - dsA.position.z) * extrapT * dampen,
+              },
+              quaternion: slerpQuat(dsA.quaternion, dsB.quaternion, 1 + extrapT * dampen),
+            };
+          }),
+          receivedAt: prevConsumedB.receivedAt,
+        };
+        return cachedResult;
+      }
+    }
     cachedResult = buffer[0] ?? null;
     return cachedResult;
   }
@@ -164,7 +206,9 @@ export function interpolateShake(): ShakeFrame | null {
   metrics.bufferSizeAtConsume.push(buffer.length);
 
   if (t >= 1) {
-    buffer.shift();
+    const consumed = buffer.shift()!;
+    prevConsumedA = prevConsumedB;
+    prevConsumedB = consumed;
     cachedResult = b;
     return cachedResult;
   }
@@ -181,11 +225,19 @@ export function clearShakeBuffer(): void {
   buffer.length = 0;
   lastReceived = 0;
   seqBase = null;
+  prevConsumedA = null;
+  prevConsumedB = null;
 }
 
 /** Returns the current buffer size and last interpolation t. Cheap — no allocations. */
 export function getShakeConsumeState(): { bufSz: number; consumeT: number } {
   return { bufSz: buffer.length, consumeT: +metrics.lastConsumeT.toFixed(3) };
+}
+
+/** Returns the last interpolated/extrapolated result without advancing the buffer.
+ *  Used by transition logic to know where the cup was at shake end. */
+export function getLastShakeFrame(): ShakeFrame | null {
+  return cachedResult;
 }
 
 export function getShakeBufferDebugSnapshot(): {
