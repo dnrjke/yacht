@@ -19,6 +19,7 @@ let lastReceived = 0;
 let cachedResult: ShakeFrame | null = null;
 let cacheTime = 0;
 let seqBase: { seq: number; time: number } | null = null;
+let shakeStartTime = 0;
 
 const TIMELINE_CAP = 300;
 let arrivalTimeline: number[] = [];
@@ -102,6 +103,7 @@ export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: nu
   metrics.lastArrival = now;
 
   if (timelineBase === 0) timelineBase = now;
+  if (shakeStartTime === 0) shakeStartTime = now;
   const seq = (data as any).seq;
   if (arrivalTimeline.length < TIMELINE_CAP * 3) {
     arrivalTimeline.push(
@@ -157,7 +159,10 @@ export function interpolateShake(): ShakeFrame | null {
     return cachedResult;
   }
 
-  const targetTime = now - SHAKE_INTERPOLATION_DELAY_MS;
+  const rampedDelay = shakeStartTime > 0
+    ? Math.min(SHAKE_INTERPOLATION_DELAY_MS, now - shakeStartTime)
+    : SHAKE_INTERPOLATION_DELAY_MS;
+  const targetTime = now - rampedDelay;
   while (buffer.length >= 2 && buffer[1].receivedAt <= targetTime) {
     buffer.shift();
   }
@@ -211,6 +216,7 @@ export function clearShakeBuffer(): void {
   buffer.length = 0;
   lastReceived = 0;
   seqBase = null;
+  shakeStartTime = 0;
   if (arrivalTimeline.length > 0) lastArrivalTimeline = arrivalTimeline;
   if (consumeTimeline.length > 0) lastConsumeTimeline = consumeTimeline;
   arrivalTimeline = [];
