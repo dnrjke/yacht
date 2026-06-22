@@ -19,6 +19,7 @@ const AI_SHAKE_TIMEOUT = 5;
 
 const _slerp = new THREE.Quaternion();
 const _slerpB = new THREE.Quaternion();
+const _tmpVec3 = new THREE.Vector3();
 const _cupRestPos = new THREE.Vector3(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
 const FIXED_INPUT_DT = 1 / 60;
 const MAX_FIXED_INPUT_STEPS = 5;
@@ -365,9 +366,19 @@ export function PhysicsCup() {
         const frame = interpolateShake();
         if (frame) {
           lastOpponentShakeAt.current = performance.now();
-          cupRef.current.position.set(frame.cupPosition.x, frame.cupPosition.y, frame.cupPosition.z);
-          if (frame.cupQuaternion) {
-            cupRef.current.quaternion.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
+          if (spectatorTuning.smoothLerp) {
+            const alpha = Math.min(1, spectatorTuning.smoothLerpAlpha + delta * 12);
+            _tmpVec3.set(frame.cupPosition.x, frame.cupPosition.y, frame.cupPosition.z);
+            cupRef.current.position.lerp(_tmpVec3, alpha);
+            if (frame.cupQuaternion) {
+              _slerpB.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
+              cupRef.current.quaternion.slerp(_slerpB, alpha);
+            }
+          } else {
+            cupRef.current.position.set(frame.cupPosition.x, frame.cupPosition.y, frame.cupPosition.z);
+            if (frame.cupQuaternion) {
+              cupRef.current.quaternion.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
+            }
           }
           updateCupVisualDebugSnapshot('opponentShake', cupRef.current, null);
         }

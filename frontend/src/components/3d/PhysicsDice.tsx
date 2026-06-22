@@ -3,6 +3,7 @@ import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { getPhysicsEngine, onPourResult } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
 import { interpolateShake, isShakeActive } from '../../network/shakeBuffer';
+import { spectatorTuning } from '../../debug/spectatorTuning';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import * as THREE from 'three';
 import { YACHT_CONSTANTS, BOARD_CONSTANTS, detectCombo, CUP_DICE_OFFSETS, getTraySlotPosition } from '@yacht/core';
@@ -28,6 +29,8 @@ const _center = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
 const _correction = new THREE.Quaternion();
 const _localY = new THREE.Vector3(0, 1, 0);
+const _shakeLerpPos = new THREE.Vector3();
+const _shakeLerpQuat = new THREE.Quaternion();
 const _targetPos = new THREE.Vector3();
 const _targetQuat = new THREE.Quaternion();
 const _lerpQA = new THREE.Quaternion();
@@ -670,11 +673,20 @@ export function PhysicsDice() {
     if (store.gameMode === 'online' && !isMyTurn() && isShakeActive()) {
       const frame = interpolateShake();
       if (frame && frame.diceStates.length === 5) {
+        const doLerp = spectatorTuning.smoothLerp;
+        const alpha = doLerp ? Math.min(1, spectatorTuning.smoothLerpAlpha + delta * 12) : 1;
         frame.diceStates.forEach((ds, idx) => {
           const mesh = diceRefs.current[idx];
           if (mesh) {
-            mesh.position.set(ds.position.x, ds.position.y, ds.position.z);
-            mesh.quaternion.set(ds.quaternion.x, ds.quaternion.y, ds.quaternion.z, ds.quaternion.w);
+            if (doLerp) {
+              _shakeLerpPos.set(ds.position.x, ds.position.y, ds.position.z);
+              mesh.position.lerp(_shakeLerpPos, alpha);
+              _shakeLerpQuat.set(ds.quaternion.x, ds.quaternion.y, ds.quaternion.z, ds.quaternion.w);
+              mesh.quaternion.slerp(_shakeLerpQuat, alpha);
+            } else {
+              mesh.position.set(ds.position.x, ds.position.y, ds.position.z);
+              mesh.quaternion.set(ds.quaternion.x, ds.quaternion.y, ds.quaternion.z, ds.quaternion.w);
+            }
           }
         });
       }

@@ -8,14 +8,17 @@ interface ShakeFrame {
   receivedAt: number;
 }
 
+import { spectatorTuning } from '../debug/spectatorTuning';
+
 const buffer: ShakeFrame[] = [];
 const BUFFER_MAX = 24;
 const STALE_MS = 900;
-import { spectatorTuning } from '../debug/spectatorTuning';
+const EXTRAP_MAX_MS = 50;
 
 let lastReceived = 0;
 let cachedResult: ShakeFrame | null = null;
 let cacheTime = 0;
+let prevFrame: ShakeFrame | null = null;
 
 export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'>): void {
   const now = performance.now();
@@ -35,17 +38,19 @@ export function interpolateShake(): ShakeFrame | null {
   }
 
   if (buffer.length === 1) {
-    cachedResult = buffer[0];
+    cachedResult = extrapolateIfPossible(buffer[0], now);
     return cachedResult;
   }
 
   const targetTime = now - spectatorTuning.shakeInterpolationDelayMs;
   while (buffer.length >= 2 && buffer[1].receivedAt <= targetTime) {
+    prevFrame = buffer[0];
     buffer.shift();
   }
 
   if (buffer.length < 2) {
-    cachedResult = buffer[0] ?? null;
+    const sole = buffer[0] ?? null;
+    cachedResult = sole ? extrapolateIfPossible(sole, now) : null;
     return cachedResult;
   }
 
@@ -53,6 +58,7 @@ export function interpolateShake(): ShakeFrame | null {
   const b = buffer[1];
   const frameDuration = b.receivedAt - a.receivedAt;
   if (frameDuration <= 0) {
+    prevFrame = a;
     buffer.shift();
     cachedResult = b;
     return cachedResult;
@@ -62,11 +68,13 @@ export function interpolateShake(): ShakeFrame | null {
   const t = Math.min(elapsed / frameDuration, 1);
 
   if (t >= 1) {
+    prevFrame = a;
     buffer.shift();
     cachedResult = b;
     return cachedResult;
   }
 
+  prevFrame = a;
   cachedResult = lerpFrames(a, b, t);
   return cachedResult;
 }
@@ -78,6 +86,7 @@ export function isShakeActive(): boolean {
 export function clearShakeBuffer(): void {
   buffer.length = 0;
   lastReceived = 0;
+  prevFrame = null;
 }
 
 export function getShakeBufferDebugSnapshot(): {
@@ -131,6 +140,16 @@ function slerpQuat(
     z: s0 * a.z + s1 * b.z,
     w: s0 * a.w + s1 * b.w,
   };
+}
+
+function extrapolateIfPossible(latest: ShakeFrame, now: number): ShakeFrame {
+  if (!spectatorTuning.extrapolation || !prevFrame) return latest;
+  const dt = latest.receivedAt - prevFrame.receivedAt;
+  if (dt <= 0) return latest;
+  const overshot = Math.min(now - latest.receivedAt, EXTRAP_MAX_MS);
+  if (overshot <= 0) return latest;
+  const t = overshot / dt;
+  return lerpFrames(prevFrame, latest, 1 + t);
 }
 
 function lerpFrames(a: ShakeFrame, b: ShakeFrame, t: number): ShakeFrame {
