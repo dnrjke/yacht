@@ -180,9 +180,16 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
       socket.emit('POUR_REJECTED', { reason: 'rate_limited' });
       return;
     }
+    const relayMetrics = physicsLoop?.getAndResetMetrics();
     tryResumeAutoPlay(room);
     gameActions.handleFromSocket(role, 'POUR_CUP', data, socket);
     resetTurnTimerForPlayer(room, role);
+    if (relayMetrics) {
+      const opponent = room.players.find((_, i) => (role === 'p1' ? i === 1 : i === 0));
+      if (opponent?.socketId) {
+        io.to(opponent.socketId).emit('SHAKE_RELAY_METRICS', relayMetrics);
+      }
+    }
   });
 
   socket.on('KEEP_DIE', (data: any) => {

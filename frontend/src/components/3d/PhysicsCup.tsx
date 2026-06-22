@@ -266,6 +266,7 @@ export function PhysicsCup() {
         hasSocket: Boolean(sock),
         turnNumber: s.onlineTurnNumber,
         rollId: s.onlineRollId,
+        shakeEmitted: shakeSeq.current,
         pos: {
           x: +cupRef.current.position.x.toFixed(2),
           y: +cupRef.current.position.y.toFixed(2),

@@ -20,10 +20,26 @@ interface ShakeInput {
 
 const TICK_MS = 1000 / 60;
 
+interface ShakeRelayMetrics {
+  received: number;
+  seqDropped: number;
+  ticksNoInput: number;
+  phaseSkipped: number;
+  turnMismatch: number;
+  contextFail: number;
+  relayed: number;
+  noOpponent: number;
+}
+
 export class RoomPhysicsLoop {
   private timer: ReturnType<typeof setInterval> | null = null;
   private latestInput: ShakeInput | null = null;
   private lastSeqByRole: Record<Role, number> = { p1: -1, p2: -1 };
+  private metrics: ShakeRelayMetrics = {
+    received: 0, seqDropped: 0, ticksNoInput: 0,
+    phaseSkipped: 0, turnMismatch: 0, contextFail: 0,
+    relayed: 0, noOpponent: 0,
+  };
 
   constructor(private room: Room, private io: Server) {}
 
@@ -43,8 +59,22 @@ export class RoomPhysicsLoop {
     this.lastSeqByRole = { p1: -1, p2: -1 };
   }
 
+  getAndResetMetrics(): ShakeRelayMetrics {
+    const snap = { ...this.metrics };
+    this.metrics = {
+      received: 0, seqDropped: 0, ticksNoInput: 0,
+      phaseSkipped: 0, turnMismatch: 0, contextFail: 0,
+      relayed: 0, noOpponent: 0,
+    };
+    return snap;
+  }
+
   enqueueShake(role: Role, data: Omit<ShakeInput, 'role'>): void {
-    if (typeof data.seq === 'number' && data.seq <= this.lastSeqByRole[role]) return;
+    if (typeof data.seq === 'number' && data.seq <= this.lastSeqByRole[role]) {
+      this.metrics.seqDropped++;
+      return;
+    }
+    this.metrics.received++;
     if (typeof data.seq === 'number') this.lastSeqByRole[role] = data.seq;
     this.latestInput = { ...data, role };
   }
@@ -55,19 +85,28 @@ export class RoomPhysicsLoop {
   }
 
   private tick(): void {
-    if (this.room.state.turnPhase !== 'waiting_pour') return;
+    if (this.room.state.turnPhase !== 'waiting_pour') {
+      if (this.latestInput) this.metrics.phaseSkipped++;
+      return;
+    }
     this.applyLatestInput();
   }
 
   private applyLatestInput(): void {
     const input = this.latestInput;
-    if (!input) return;
-    if (this.room.state.currentTurn !== input.role) return;
-    if (!this.room.state.validateTurnContext(input.turnNumber)) return;
+    if (!input) {
+      this.metrics.ticksNoInput++;
+      return;
+    }
+    if (this.room.state.currentTurn !== input.role) {
+      this.metrics.turnMismatch++;
+      return;
+    }
+    if (!this.room.state.validateTurnContext(input.turnNumber)) {
+      this.metrics.contextFail++;
+      return;
+    }
 
-    // Keep server physics roughly in sync (fallback for auto-play takeover),
-    // but the spectator is shown the TURN PLAYER's actual transmitted motion —
-    // not a server re-simulation — so both screens match.
     this.room.physics.updateCupTransform(input.cupPosition, input.cupQuaternion);
     this.room.physics.step();
 
@@ -75,6 +114,7 @@ export class RoomPhysicsLoop {
       input.role === 'p1' ? index === 1 : index === 0
     ));
     if (opponent?.socketId) {
+      this.metrics.relayed++;
       this.io.to(opponent.socketId).emit('OPPONENT_SHAKE_STATE', {
         turnNumber: input.turnNumber,
         seq: input.seq,
@@ -84,6 +124,8 @@ export class RoomPhysicsLoop {
         cupQuaternion: input.cupQuaternion,
         diceStates: input.diceStates ?? this.room.physics.getDiceStates(),
       });
+    } else {
+      this.metrics.noOpponent++;
     }
   }
 }

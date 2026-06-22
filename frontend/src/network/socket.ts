@@ -236,6 +236,10 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
     pushShakeFrame(data);
   });
 
+  socket.on('SHAKE_RELAY_METRICS', (data: any) => {
+    pushDebugLog('SHAKE_RELAY_METRICS', data);
+  });
+
   return socket;
 }
 
