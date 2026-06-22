@@ -77,6 +77,15 @@ let prevSource: string = '';
 const phaseTransitions: Array<{ from: string; to: string; at: number }> = [];
 const MAX_TRANSITIONS = 20;
 
+/**
+ * Persisted shake trace summary — captured when shake ends (phase transition
+ * out of opponentShake/shakeHold) so the data survives ring buffer overwrites.
+ * Reset at the start of each new shake.
+ */
+let lastShakeTraceSummary: {
+  min: number; median: number; p95: number; max: number;
+} | null = null;
+
 function recordFrame(cup: THREE.Group, source: string, bufInfo?: { bufSz: number; consumeT: number }): void {
   const sample: FrameSample = {
     t: performance.now(),
@@ -96,6 +105,23 @@ function recordFrame(cup: THREE.Group, source: string, bufInfo?: { bufSz: number
   if (prevSource && source !== prevSource) {
     phaseTransitions.push({ from: prevSource, to: source, at: sample.t });
     if (phaseTransitions.length > MAX_TRANSITIONS) phaseTransitions.shift();
+
+    // Capture shake speed summary when transitioning OUT of shake phases,
+    // before ring buffer overwrites the shake frames.
+    if (
+      (prevSource === 'opponentShake' || prevSource === 'shakeHold') &&
+      source !== 'opponentShake' && source !== 'shakeHold'
+    ) {
+      lastShakeTraceSummary = computeShakeSpeedFromRing();
+    }
+
+    // Reset persisted summary when a NEW shake starts
+    if (
+      (source === 'opponentShake') &&
+      prevSource !== 'opponentShake' && prevSource !== 'shakeHold'
+    ) {
+      lastShakeTraceSummary = null;
+    }
   }
   prevSource = source;
 }
@@ -165,6 +191,32 @@ export function isCurrentlyFreezing(): boolean {
   return false;
 }
 
+function computeShakeSpeedFromRing(): { min: number; median: number; p95: number; max: number } | null {
+  const len = frameRing.length;
+  const speeds: number[] = [];
+  for (let k = 1; k < len; k++) {
+    const prevIdx = (frameRingIdx + k - 1) % len;
+    const curIdx = (frameRingIdx + k) % len;
+    const a = frameRing[prevIdx];
+    const b = frameRing[curIdx];
+    if (a.src !== 'opponentShake' && a.src !== 'shakeHold') continue;
+    if (b.src !== 'opponentShake' && b.src !== 'shakeHold') continue;
+    const dt = b.t - a.t;
+    if (dt <= 0) continue;
+    const dx = b.px - a.px, dy = b.py - a.py, dz = b.pz - a.pz;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    speeds.push(+(dist / (dt / 1000)).toFixed(1));
+  }
+  if (speeds.length === 0) return null;
+  speeds.sort((a, b) => a - b);
+  return {
+    min: speeds[0],
+    median: speeds[Math.floor(speeds.length / 2)],
+    p95: speeds[Math.floor(speeds.length * 0.95)],
+    max: speeds[speeds.length - 1],
+  };
+}
+
 export function getCupFrameTrace() {
   const ordered: FrameSample[] = [];
   const len = frameRing.length;
@@ -190,38 +242,45 @@ export function getCupFrameTrace() {
       freezeCount++;
     } else if (freezeStart >= 0) {
       if (freezeCount >= 3) {
-        // Collect buffer sizes during the freeze span
-        let bufMin = Infinity, bufMax = -Infinity, hasBuf = false;
-        for (let fi = freezeStart; fi < i; fi++) {
-          const bs = ordered[fi].bufSz;
-          if (bs !== undefined) { bufMin = Math.min(bufMin, bs); bufMax = Math.max(bufMax, bs); hasBuf = true; }
+        const freezeSource = ordered[freezeStart].src;
+        // Only report freezes during shake phases — cupPlayback/restLerp freezes
+        // are normal (cup stationary after pour) and produce false positives.
+        if (freezeSource === 'opponentShake' || freezeSource === 'shakeHold') {
+          let bufMin = Infinity, bufMax = -Infinity, hasBuf = false;
+          for (let fi = freezeStart; fi < i; fi++) {
+            const bs = ordered[fi].bufSz;
+            if (bs !== undefined) { bufMin = Math.min(bufMin, bs); bufMax = Math.max(bufMax, bs); hasBuf = true; }
+          }
+          freezes.push({
+            startIdx: freezeStart,
+            frames: freezeCount + 1,
+            durationMs: Math.round(ordered[i - 1].t - ordered[freezeStart].t),
+            source: freezeSource,
+            bufSzRange: hasBuf ? { min: bufMin, max: bufMax } : undefined,
+          });
         }
-        freezes.push({
-          startIdx: freezeStart,
-          frames: freezeCount + 1,
-          durationMs: Math.round(ordered[i - 1].t - ordered[freezeStart].t),
-          source: ordered[freezeStart].src,
-          bufSzRange: hasBuf ? { min: bufMin, max: bufMax } : undefined,
-        });
       }
       freezeStart = -1;
       freezeCount = 0;
     }
   }
   if (freezeStart >= 0 && freezeCount >= 3) {
-    const last = ordered[ordered.length - 1];
-    let bufMin = Infinity, bufMax = -Infinity, hasBuf = false;
-    for (let fi = freezeStart; fi < ordered.length; fi++) {
-      const bs = ordered[fi].bufSz;
-      if (bs !== undefined) { bufMin = Math.min(bufMin, bs); bufMax = Math.max(bufMax, bs); hasBuf = true; }
+    const freezeSource = ordered[freezeStart].src;
+    if (freezeSource === 'opponentShake' || freezeSource === 'shakeHold') {
+      const last = ordered[ordered.length - 1];
+      let bufMin = Infinity, bufMax = -Infinity, hasBuf = false;
+      for (let fi = freezeStart; fi < ordered.length; fi++) {
+        const bs = ordered[fi].bufSz;
+        if (bs !== undefined) { bufMin = Math.min(bufMin, bs); bufMax = Math.max(bufMax, bs); hasBuf = true; }
+      }
+      freezes.push({
+        startIdx: freezeStart,
+        frames: freezeCount + 1,
+        durationMs: Math.round(last.t - ordered[freezeStart].t),
+        source: freezeSource,
+        bufSzRange: hasBuf ? { min: bufMin, max: bufMax } : undefined,
+      });
     }
-    freezes.push({
-      startIdx: freezeStart,
-      frames: freezeCount + 1,
-      durationMs: Math.round(last.t - ordered[freezeStart].t),
-      source: ordered[freezeStart].src,
-      bufSzRange: hasBuf ? { min: bufMin, max: bufMax } : undefined,
-    });
   }
 
   const frameGaps = ordered.slice(1).map((b, i) => Math.round(b.t - ordered[i].t));
@@ -254,7 +313,7 @@ export function getCupFrameTrace() {
       median: sortedSpeeds[Math.floor(sortedSpeeds.length / 2)],
       p95: sortedSpeeds[Math.floor(sortedSpeeds.length * 0.95)],
       max: sortedSpeeds[sortedSpeeds.length - 1],
-    } : null,
+    } : lastShakeTraceSummary,
     freezes,
     phaseTransitions: phaseTransitions.map(t => ({
       from: t.from,

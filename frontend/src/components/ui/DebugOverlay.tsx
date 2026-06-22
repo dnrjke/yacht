@@ -13,7 +13,7 @@ interface LogEntry {
 }
 
 const MAX_LOG = 50;
-const DEBUG_SCHEMA = 'online-pour-debug-v16';
+const DEBUG_SCHEMA = 'online-pour-debug-v17';
 
 let logBuffer: LogEntry[] = [];
 let logSeq = 0;
