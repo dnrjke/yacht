@@ -98,20 +98,32 @@ function recordFrame(cup: THREE.Group, source: string): void {
 
 export function isCurrentlyFreezing(): boolean {
   const len = frameRing.length;
-  if (len < 3) return false;
-  for (let k = 1; k < 3; k++) {
-    const idx = (frameRingIdx - 1 - k + len * 2) % len;
-    const prev = (idx - 1 + len) % len;
-    const a = frameRing[prev];
-    const b = frameRing[idx];
-    if (!a || !b) return false;
-    const dx = b.px - a.px, dy = b.py - a.py, dz = b.pz - a.pz;
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const dq = Math.abs(a.qx * b.qx + a.qy * b.qy + a.qz * b.qz + a.qw * b.qw);
-    if (dist >= 0.001 || dq <= 0.9999) return false;
-  }
+  if (len < 6) return false;
+
   const newest = frameRing[(frameRingIdx - 1 + len) % len];
-  return newest.src !== 'restLerp' && newest.src !== 'idle' && newest.src !== 'cancelled';
+  if (newest.src !== 'opponentShake' && newest.src !== 'shakeHold') return false;
+
+  const samples: FrameSample[] = [];
+  for (let k = 0; k < 6; k++) {
+    samples.unshift(frameRing[(frameRingIdx - 1 - k + len * 2) % len]);
+  }
+
+  const speeds: number[] = [];
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1], b = samples[i];
+    const dt = b.t - a.t;
+    if (dt <= 0) { speeds.push(0); continue; }
+    const dx = b.px - a.px, dy = b.py - a.py, dz = b.pz - a.pz;
+    speeds.push(Math.sqrt(dx * dx + dy * dy + dz * dz) / dt);
+  }
+
+  const recentSpeed = speeds[speeds.length - 1];
+  const priorAvg = speeds.slice(0, -2).reduce((a, b) => a + b, 0) / Math.max(1, speeds.length - 2);
+
+  if (recentSpeed < 0.0001 && priorAvg > 0.001) return true;
+  if (priorAvg > 0.005 && recentSpeed < priorAvg * 0.1) return true;
+
+  return false;
 }
 
 export function getCupFrameTrace() {
