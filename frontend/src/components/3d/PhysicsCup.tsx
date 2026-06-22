@@ -4,7 +4,7 @@ import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { soundManager } from '../../utils/soundManager';
 import { getPhysicsEngine, emitPourResult, onPourResult, onAiPour } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
-import { interpolateShake, isShakeActive, getShakeConsumeState, getLastShakeFrame } from '../../network/shakeBuffer';
+import { interpolateShake, isShakeActive, getShakeConsumeState } from '../../network/shakeBuffer';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import { pushDebugLog } from '../ui/DebugOverlay';
 import * as THREE from 'three';
@@ -23,15 +23,8 @@ const FIXED_INPUT_DT = 1 / 60;
 const MAX_FIXED_INPUT_STEPS = 5;
 const CUP_FOLLOW_ALPHA = 0.2;
 const OPPONENT_SHAKE_HOLD_MS = 700;
-const SHAKE_TO_POUR_BLEND_MS = 150;
 let lastPreviewCupPlaybackTime = 0;
 let awaitingAuthoritativeCupResult = false;
-
-/** Saved last shake position/quaternion at the moment POUR_RESULT arrives,
- *  so we can blend from shake into pour trajectory smoothly. */
-let lastShakeEndPos: { x: number; y: number; z: number } | null = null;
-let lastShakeEndQuat: { x: number; y: number; z: number; w: number } | null = null;
-let shakeToPlaybackBlendStart: number = 0;
 
 type CupPlayback = { frames: any[], time: number, preview?: boolean, scheduledStartAt?: number };
 
@@ -385,29 +378,6 @@ export function PhysicsCup() {
       if (result.preview) {
         awaitingAuthoritativeCupResult = true;
       }
-
-      // Capture last shake position for smooth transition before clearing
-      const lastFrame = getLastShakeFrame();
-      if (lastFrame && cupRef.current) {
-        lastShakeEndPos = { ...lastFrame.cupPosition };
-        lastShakeEndQuat = { ...lastFrame.cupQuaternion };
-        shakeToPlaybackBlendStart = performance.now();
-      } else if (cupRef.current) {
-        // Fallback: use current visual position
-        lastShakeEndPos = {
-          x: cupRef.current.position.x,
-          y: cupRef.current.position.y,
-          z: cupRef.current.position.z,
-        };
-        lastShakeEndQuat = {
-          x: cupRef.current.quaternion.x,
-          y: cupRef.current.quaternion.y,
-          z: cupRef.current.quaternion.z,
-          w: cupRef.current.quaternion.w,
-        };
-        shakeToPlaybackBlendStart = performance.now();
-      }
-
       const frames = result.cupTrajectory;
       const FRAME_DT = 1 / 60;
       const initialTime = !result.preview && lastPreviewCupPlaybackTime > 0
@@ -415,8 +385,6 @@ export function PhysicsCup() {
         : 0;
       if (!result.preview) lastPreviewCupPlaybackTime = 0;
       isPouring.current = true;
-      // Skip shakeHold — go straight to cupPlayback
-      opponentShakeSound.current = false;
       cupPlayback.current = { frames, time: initialTime, preview: result.preview, scheduledStartAt: result.scheduledStartAt };
       soundManager.stopLoop('rolling_dice', 200);
       if (result.preview || initialTime === 0) {
@@ -589,37 +557,14 @@ export function PhysicsCup() {
         const alpha = fi - f0;
         const a = pb.frames[f0];
         const b = pb.frames[f1];
-        let trajX = a.position.x + (b.position.x - a.position.x) * alpha;
-        let trajY = a.position.y + (b.position.y - a.position.y) * alpha;
-        let trajZ = a.position.z + (b.position.z - a.position.z) * alpha;
+        cupRef.current.position.set(
+          a.position.x + (b.position.x - a.position.x) * alpha,
+          a.position.y + (b.position.y - a.position.y) * alpha,
+          a.position.z + (b.position.z - a.position.z) * alpha,
+        );
         _slerp.set(a.quaternion.x, a.quaternion.y, a.quaternion.z, a.quaternion.w);
         _slerpB.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
         _slerp.slerp(_slerpB, alpha);
-
-        // Blend from last shake position into the trajectory to avoid a visual jump
-        if (lastShakeEndPos && shakeToPlaybackBlendStart > 0) {
-          const blendElapsed = performance.now() - shakeToPlaybackBlendStart;
-          if (blendElapsed < SHAKE_TO_POUR_BLEND_MS) {
-            const blendT = blendElapsed / SHAKE_TO_POUR_BLEND_MS;
-            // Ease-in-out for smooth transition
-            const smooth = blendT * blendT * (3 - 2 * blendT);
-            trajX = lastShakeEndPos.x + (trajX - lastShakeEndPos.x) * smooth;
-            trajY = lastShakeEndPos.y + (trajY - lastShakeEndPos.y) * smooth;
-            trajZ = lastShakeEndPos.z + (trajZ - lastShakeEndPos.z) * smooth;
-            if (lastShakeEndQuat) {
-              _slerpB.copy(_slerp);
-              _slerp.set(lastShakeEndQuat.x, lastShakeEndQuat.y, lastShakeEndQuat.z, lastShakeEndQuat.w);
-              _slerp.slerp(_slerpB, smooth);
-            }
-          } else {
-            // Blend complete — clear state
-            lastShakeEndPos = null;
-            lastShakeEndQuat = null;
-            shakeToPlaybackBlendStart = 0;
-          }
-        }
-
-        cupRef.current.position.set(trajX, trajY, trajZ);
         cupRef.current.quaternion.copy(_slerp);
       } else {
         cupPlayback.current = null;
