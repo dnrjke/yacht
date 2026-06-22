@@ -26,14 +26,18 @@ export interface ShakeRelayMetrics {
   contextFail: number;
   relayed: number;
   noOpponent: number;
+  arrivalTimeline: number[];
 }
 
 export class RoomPhysicsLoop {
   private lastSeqByRole: Record<Role, number> = { p1: -1, p2: -1 };
+  private arrivalTimeline: number[] = [];
+  private arrivalBase: number = 0;
   private metrics: ShakeRelayMetrics = {
     received: 0, seqDropped: 0,
     phaseSkipped: 0, turnMismatch: 0, contextFail: 0,
     relayed: 0, noOpponent: 0,
+    arrivalTimeline: [],
   };
 
   constructor(private room: Room, private io: Server) {}
@@ -43,15 +47,20 @@ export class RoomPhysicsLoop {
 
   clearInput(): void {
     this.lastSeqByRole = { p1: -1, p2: -1 };
+    this.arrivalTimeline = [];
+    this.arrivalBase = 0;
   }
 
   getAndResetMetrics(): ShakeRelayMetrics {
-    const snap = { ...this.metrics };
+    const snap = { ...this.metrics, arrivalTimeline: [...this.arrivalTimeline] };
     this.metrics = {
       received: 0, seqDropped: 0,
       phaseSkipped: 0, turnMismatch: 0, contextFail: 0,
       relayed: 0, noOpponent: 0,
+      arrivalTimeline: [],
     };
+    this.arrivalTimeline = [];
+    this.arrivalBase = 0;
     return snap;
   }
 
@@ -81,6 +90,10 @@ export class RoomPhysicsLoop {
     ));
     if (opponent?.socketId) {
       this.metrics.relayed++;
+      if (this.arrivalTimeline.length === 0) this.arrivalBase = Date.now();
+      if (this.arrivalTimeline.length < 300) {
+        this.arrivalTimeline.push(Date.now() - this.arrivalBase);
+      }
       this.io.to(opponent.socketId).emit('OPPONENT_SHAKE_STATE', {
         turnNumber: data.turnNumber,
         seq: data.seq,

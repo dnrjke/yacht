@@ -3,7 +3,7 @@ import { derivePlacementOrder, GameSnapshot } from '@yacht/core';
 import { useGameStore } from '../store/gameStore';
 import { emitPourResult, getPhysicsEngine } from '../physics/physicsEngine';
 import { getReconnectInfo, clearReconnectInfo } from './identity';
-import { pushShakeFrame, clearShakeBuffer, getShakeMetrics, resetShakeMetrics } from './shakeBuffer';
+import { pushShakeFrame, clearShakeBuffer, getShakeMetrics, resetShakeMetrics, setServerTimelines } from './shakeBuffer';
 import { applySpectatorPourBuffer } from './spectatorBuffer';
 import { soundManager } from '../utils/soundManager';
 import { pushDebugLog } from '../components/ui/DebugOverlay';
@@ -238,6 +238,7 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
 
   socket.on('SHAKE_RELAY_METRICS', (data: any) => {
     pushDebugLog('SHAKE_RELAY_METRICS', data);
+    setServerTimelines(data?.serverArrival ?? null, data?.p1Emit ?? null);
   });
 
   return socket;

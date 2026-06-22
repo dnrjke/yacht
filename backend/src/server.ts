@@ -187,7 +187,10 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
     if (relayMetrics) {
       const opponent = room.players.find((_, i) => (role === 'p1' ? i === 1 : i === 0));
       if (opponent?.socketId) {
-        io.to(opponent.socketId).emit('SHAKE_RELAY_METRICS', relayMetrics);
+        io.to(opponent.socketId).emit('SHAKE_RELAY_METRICS', {
+          ...relayMetrics,
+          p1Emit: data?.emitTimeline ?? null,
+        });
       }
     }
   });

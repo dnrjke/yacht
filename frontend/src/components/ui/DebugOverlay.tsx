@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { getPhysicsEngine } from '../../physics/physicsEngine';
-import { getShakeBufferDebugSnapshot, getShakeMetrics } from '../../network/shakeBuffer';
+import { getShakeBufferDebugSnapshot, getShakeMetrics, getShakeTimeline } from '../../network/shakeBuffer';
 import { getSpectatorBufferDebugSnapshot } from '../../network/spectatorBuffer';
 import { getCupVisualDebugSnapshot, getCupFrameTrace, isCurrentlyFreezing } from '../3d/PhysicsCup';
 import { getDicePlaybackDebugSnapshot, getRenderedDiceDebugSnapshot } from '../3d/PhysicsDice';
@@ -13,7 +13,7 @@ interface LogEntry {
 }
 
 const MAX_LOG = 50;
-const DEBUG_SCHEMA = 'online-pour-debug-v17';
+const DEBUG_SCHEMA = 'online-pour-debug-v18';
 
 let logBuffer: LogEntry[] = [];
 let logSeq = 0;
@@ -116,6 +116,7 @@ function buildSnapshot() {
   snap.shakeBuffer = shakeBuffer;
   snap.shakeMetrics = getShakeMetrics();
   snap.cupFrameTrace = getCupFrameTrace();
+  snap.shakeTimeline = getShakeTimeline();
 
   return snap;
 }

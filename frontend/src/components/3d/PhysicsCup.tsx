@@ -26,6 +26,10 @@ const OPPONENT_SHAKE_HOLD_MS = 700;
 let lastPreviewCupPlaybackTime = 0;
 let awaitingAuthoritativeCupResult = false;
 
+const EMIT_TIMELINE_CAP = 300;
+let emitTimeline: number[] = [];
+let emitTimelineBase = 0;
+
 type CupPlayback = { frames: any[], time: number, preview?: boolean, scheduledStartAt?: number };
 
 interface CupVisualDebugSnapshot {
@@ -464,6 +468,11 @@ export function PhysicsCup() {
             if (physics) {
               // Final shake frame: cup + dice from the same physics snapshot.
               const cupState = physics.getCupState();
+              const emitNow = performance.now();
+              if (emitTimelineBase === 0) emitTimelineBase = emitNow;
+              if (emitTimeline.length < EMIT_TIMELINE_CAP) {
+                emitTimeline.push(Math.round(emitNow - emitTimelineBase));
+              }
               sock.emit('CUP_SHAKE_STATE', {
                 turnNumber: s.onlineTurnNumber,
                 seq: shakeSeq.current++,
@@ -494,7 +503,10 @@ export function PhysicsCup() {
                 diceTrajectory: localResult.diceTrajectory,
                 cupTrajectory: localResult.cupTrajectory,
               } : {}),
+              emitTimeline: emitTimeline.length > 0 ? emitTimeline : undefined,
             });
+            emitTimeline = [];
+            emitTimelineBase = 0;
             pushDebugLog('POUR_CUP_EMIT', {
               turnNumber: s.onlineTurnNumber,
               rollId: s.onlineRollId,
@@ -695,6 +707,11 @@ export function PhysicsCup() {
           // (one frame ahead of the not-yet-stepped dice) makes the dice look
           // detached from the cup on the spectator's screen.
           const cupState = physics.getCupState();
+          const emitNow = performance.now();
+          if (emitTimelineBase === 0) emitTimelineBase = emitNow;
+          if (emitTimeline.length < EMIT_TIMELINE_CAP) {
+            emitTimeline.push(Math.round(emitNow - emitTimelineBase));
+          }
           sock.emit('CUP_SHAKE_STATE', {
             turnNumber: s.onlineTurnNumber,
             seq: shakeSeq.current++,

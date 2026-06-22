@@ -20,6 +20,13 @@ let cachedResult: ShakeFrame | null = null;
 let cacheTime = 0;
 let seqBase: { seq: number; time: number } | null = null;
 
+const TIMELINE_CAP = 300;
+let arrivalTimeline: number[] = [];
+let consumeTimeline: number[] = [];
+let timelineBase = 0;
+let serverArrivalTimeline: number[] | null = null;
+let p1EmitTimeline: number[] | null = null;
+
 interface ShakeMetrics {
   arrivalGaps: number[];
   underruns: number;
@@ -80,6 +87,11 @@ export function resetShakeMetrics(): void {
   metrics.seqGaps.length = 0;
   metrics.driftResets = 0;
   metrics.lastSeq = -1;
+  arrivalTimeline = [];
+  consumeTimeline = [];
+  timelineBase = 0;
+  serverArrivalTimeline = null;
+  p1EmitTimeline = null;
 }
 
 export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: number }): void {
@@ -89,8 +101,17 @@ export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: nu
   }
   metrics.lastArrival = now;
 
-  let receivedAt: number;
+  if (timelineBase === 0) timelineBase = now;
   const seq = (data as any).seq;
+  if (arrivalTimeline.length < TIMELINE_CAP * 3) {
+    arrivalTimeline.push(
+      Math.round(now - timelineBase),
+      typeof seq === 'number' ? seq : -1,
+      buffer.length,
+    );
+  }
+
+  let receivedAt: number;
   if (typeof seq === 'number') {
     // Track seq gaps (missed frames from sender or network drops)
     if (metrics.lastSeq >= 0 && seq > metrics.lastSeq + 1) {
@@ -144,6 +165,9 @@ export function interpolateShake(): ShakeFrame | null {
   if (buffer.length < 2) {
     metrics.underruns++;
     metrics.bufferSizeAtConsume.push(buffer.length);
+    if (timelineBase > 0 && consumeTimeline.length < TIMELINE_CAP * 4) {
+      consumeTimeline.push(Math.round(now - timelineBase), buffer.length, 0, 1);
+    }
     cachedResult = buffer[0] ?? null;
     return cachedResult;
   }
@@ -162,6 +186,9 @@ export function interpolateShake(): ShakeFrame | null {
   metrics.interpolations++;
   metrics.lastConsumeT = t;
   metrics.bufferSizeAtConsume.push(buffer.length);
+  if (timelineBase > 0 && consumeTimeline.length < TIMELINE_CAP * 4) {
+    consumeTimeline.push(Math.round(now - timelineBase), buffer.length, Math.round(t * 1000), 0);
+  }
 
   if (t >= 1) {
     buffer.shift();
@@ -181,6 +208,30 @@ export function clearShakeBuffer(): void {
   buffer.length = 0;
   lastReceived = 0;
   seqBase = null;
+  arrivalTimeline = [];
+  consumeTimeline = [];
+  timelineBase = 0;
+  serverArrivalTimeline = null;
+  p1EmitTimeline = null;
+}
+
+export function getShakeTimeline(): {
+  clientArrival: number[];
+  consumeTrace: number[];
+  serverArrival: number[] | null;
+  p1Emit: number[] | null;
+} {
+  return {
+    clientArrival: arrivalTimeline,
+    consumeTrace: consumeTimeline,
+    serverArrival: serverArrivalTimeline,
+    p1Emit: p1EmitTimeline,
+  };
+}
+
+export function setServerTimelines(serverArrival: number[] | null, p1Emit: number[] | null): void {
+  serverArrivalTimeline = serverArrival;
+  p1EmitTimeline = p1Emit;
 }
 
 /** Returns the current buffer size and last interpolation t. Cheap — no allocations. */
