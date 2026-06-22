@@ -87,11 +87,11 @@ export function resetShakeMetrics(): void {
   metrics.seqGaps.length = 0;
   metrics.driftResets = 0;
   metrics.lastSeq = -1;
+  if (arrivalTimeline.length > 0) lastArrivalTimeline = arrivalTimeline;
+  if (consumeTimeline.length > 0) lastConsumeTimeline = consumeTimeline;
   arrivalTimeline = [];
   consumeTimeline = [];
   timelineBase = 0;
-  serverArrivalTimeline = null;
-  p1EmitTimeline = null;
 }
 
 export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: number }): void {
@@ -204,15 +204,18 @@ export function isShakeActive(): boolean {
   return buffer.length > 0 && (performance.now() - lastReceived) < STALE_MS;
 }
 
+let lastArrivalTimeline: number[] = [];
+let lastConsumeTimeline: number[] = [];
+
 export function clearShakeBuffer(): void {
   buffer.length = 0;
   lastReceived = 0;
   seqBase = null;
+  if (arrivalTimeline.length > 0) lastArrivalTimeline = arrivalTimeline;
+  if (consumeTimeline.length > 0) lastConsumeTimeline = consumeTimeline;
   arrivalTimeline = [];
   consumeTimeline = [];
   timelineBase = 0;
-  serverArrivalTimeline = null;
-  p1EmitTimeline = null;
 }
 
 export function getShakeTimeline(): {
@@ -222,8 +225,8 @@ export function getShakeTimeline(): {
   p1Emit: number[] | null;
 } {
   return {
-    clientArrival: arrivalTimeline,
-    consumeTrace: consumeTimeline,
+    clientArrival: arrivalTimeline.length > 0 ? arrivalTimeline : lastArrivalTimeline,
+    consumeTrace: consumeTimeline.length > 0 ? consumeTimeline : lastConsumeTimeline,
     serverArrival: serverArrivalTimeline,
     p1Emit: p1EmitTimeline,
   };

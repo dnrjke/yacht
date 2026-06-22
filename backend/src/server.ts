@@ -24,6 +24,10 @@ const io = new Server(httpServer, {
   pingTimeout: 5000,
 });
 
+httpServer.on('connection', (socket) => {
+  socket.setNoDelay(true);
+});
+
 const PORT = process.env.PORT || 3001;
 const GRACE_PERIOD_MS = 30_000;
 
