@@ -44,6 +44,11 @@ export function interpolateShake(): ShakeFrame | null {
     buffer.shift();
   }
 
+  if (buffer.length < 2) {
+    cachedResult = buffer[0] ?? null;
+    return cachedResult;
+  }
+
   const a = buffer[0];
   const b = buffer[1];
   const frameDuration = b.receivedAt - a.receivedAt;
