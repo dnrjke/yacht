@@ -61,6 +61,103 @@ export function getCupVisualDebugSnapshot(): CupVisualDebugSnapshot | null {
   return cupVisualDebugSnapshot;
 }
 
+interface FrameSample {
+  t: number;
+  px: number; py: number; pz: number;
+  qx: number; qy: number; qz: number; qw: number;
+  src: string;
+}
+
+const FRAME_RING_SIZE = 180;
+const frameRing: FrameSample[] = [];
+let frameRingIdx = 0;
+let prevSource: string = '';
+const phaseTransitions: Array<{ from: string; to: string; at: number }> = [];
+const MAX_TRANSITIONS = 20;
+
+function recordFrame(cup: THREE.Group, source: string): void {
+  const sample: FrameSample = {
+    t: performance.now(),
+    px: cup.position.x, py: cup.position.y, pz: cup.position.z,
+    qx: cup.quaternion.x, qy: cup.quaternion.y, qz: cup.quaternion.z, qw: cup.quaternion.w,
+    src: source,
+  };
+  if (frameRing.length < FRAME_RING_SIZE) {
+    frameRing.push(sample);
+  } else {
+    frameRing[frameRingIdx] = sample;
+  }
+  frameRingIdx = (frameRingIdx + 1) % FRAME_RING_SIZE;
+
+  if (prevSource && source !== prevSource) {
+    phaseTransitions.push({ from: prevSource, to: source, at: sample.t });
+    if (phaseTransitions.length > MAX_TRANSITIONS) phaseTransitions.shift();
+  }
+  prevSource = source;
+}
+
+export function getCupFrameTrace() {
+  const ordered: FrameSample[] = [];
+  const len = frameRing.length;
+  for (let i = 0; i < len; i++) {
+    ordered.push(frameRing[(frameRingIdx + i) % len]);
+  }
+
+  const freezes: Array<{ startIdx: number; frames: number; durationMs: number; source: string }> = [];
+  let freezeStart = -1;
+  let freezeCount = 0;
+  for (let i = 1; i < ordered.length; i++) {
+    const a = ordered[i - 1];
+    const b = ordered[i];
+    const dx = b.px - a.px, dy = b.py - a.py, dz = b.pz - a.pz;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const dq = Math.abs(a.qx * b.qx + a.qy * b.qy + a.qz * b.qz + a.qw * b.qw);
+    const isFrozen = dist < 0.001 && dq > 0.9999;
+    if (isFrozen) {
+      if (freezeStart < 0) freezeStart = i - 1;
+      freezeCount++;
+    } else if (freezeStart >= 0) {
+      if (freezeCount >= 3) {
+        freezes.push({
+          startIdx: freezeStart,
+          frames: freezeCount + 1,
+          durationMs: Math.round(ordered[i - 1].t - ordered[freezeStart].t),
+          source: ordered[freezeStart].src,
+        });
+      }
+      freezeStart = -1;
+      freezeCount = 0;
+    }
+  }
+  if (freezeStart >= 0 && freezeCount >= 3) {
+    const last = ordered[ordered.length - 1];
+    freezes.push({
+      startIdx: freezeStart,
+      frames: freezeCount + 1,
+      durationMs: Math.round(last.t - ordered[freezeStart].t),
+      source: ordered[freezeStart].src,
+    });
+  }
+
+  const frameGaps = ordered.slice(1).map((b, i) => Math.round(b.t - ordered[i].t));
+  const sortedGaps = [...frameGaps].sort((a, b) => a - b);
+
+  return {
+    totalFrames: ordered.length,
+    frameGap: sortedGaps.length > 0 ? {
+      min: sortedGaps[0],
+      median: sortedGaps[Math.floor(sortedGaps.length / 2)],
+      max: sortedGaps[sortedGaps.length - 1],
+    } : null,
+    freezes,
+    phaseTransitions: phaseTransitions.map(t => ({
+      from: t.from,
+      to: t.to,
+      atIso: new Date(performance.timeOrigin + t.at).toISOString(),
+    })),
+  };
+}
+
 export function PhysicsCup() {
   const cupRef = useRef<THREE.Group>(null);
   const isDragging = useRef(false);
@@ -483,6 +580,7 @@ function updateCupVisualDebugSnapshot(
   cup: THREE.Group,
   playback: CupPlayback | null,
 ): void {
+  recordFrame(cup, source);
   const updatedAt = Date.now();
   const physicsCup = getPhysicsEngine()?.getCupState();
   const dx = physicsCup ? cup.position.x - physicsCup.position.x : 0;

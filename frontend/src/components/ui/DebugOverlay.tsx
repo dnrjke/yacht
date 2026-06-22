@@ -3,7 +3,7 @@ import { useGameStore } from '../../store/gameStore';
 import { getPhysicsEngine } from '../../physics/physicsEngine';
 import { getShakeBufferDebugSnapshot, getShakeMetrics } from '../../network/shakeBuffer';
 import { getSpectatorBufferDebugSnapshot } from '../../network/spectatorBuffer';
-import { getCupVisualDebugSnapshot } from '../3d/PhysicsCup';
+import { getCupVisualDebugSnapshot, getCupFrameTrace } from '../3d/PhysicsCup';
 import { getDicePlaybackDebugSnapshot, getRenderedDiceDebugSnapshot } from '../3d/PhysicsDice';
 
 interface LogEntry {
@@ -115,6 +115,7 @@ function buildSnapshot() {
   snap.spectatorBuffer = spectatorBuffer;
   snap.shakeBuffer = shakeBuffer;
   snap.shakeMetrics = getShakeMetrics();
+  snap.cupFrameTrace = getCupFrameTrace();
 
   return snap;
 }
