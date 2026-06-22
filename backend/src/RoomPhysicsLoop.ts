@@ -18,12 +18,9 @@ interface ShakeInput {
   diceStates?: DiceState[];
 }
 
-const TICK_MS = 1000 / 60;
-
-interface ShakeRelayMetrics {
+export interface ShakeRelayMetrics {
   received: number;
   seqDropped: number;
-  ticksNoInput: number;
   phaseSkipped: number;
   turnMismatch: number;
   contextFail: number;
@@ -32,37 +29,26 @@ interface ShakeRelayMetrics {
 }
 
 export class RoomPhysicsLoop {
-  private timer: ReturnType<typeof setInterval> | null = null;
-  private latestInput: ShakeInput | null = null;
   private lastSeqByRole: Record<Role, number> = { p1: -1, p2: -1 };
   private metrics: ShakeRelayMetrics = {
-    received: 0, seqDropped: 0, ticksNoInput: 0,
+    received: 0, seqDropped: 0,
     phaseSkipped: 0, turnMismatch: 0, contextFail: 0,
     relayed: 0, noOpponent: 0,
   };
 
   constructor(private room: Room, private io: Server) {}
 
-  start(): void {
-    if (this.timer) return;
-    this.timer = setInterval(() => this.tick(), TICK_MS);
-  }
-
-  stop(): void {
-    if (!this.timer) return;
-    clearInterval(this.timer);
-    this.timer = null;
-  }
+  start(): void {}
+  stop(): void {}
 
   clearInput(): void {
-    this.latestInput = null;
     this.lastSeqByRole = { p1: -1, p2: -1 };
   }
 
   getAndResetMetrics(): ShakeRelayMetrics {
     const snap = { ...this.metrics };
     this.metrics = {
-      received: 0, seqDropped: 0, ticksNoInput: 0,
+      received: 0, seqDropped: 0,
       phaseSkipped: 0, turnMismatch: 0, contextFail: 0,
       relayed: 0, noOpponent: 0,
     };
@@ -76,54 +62,38 @@ export class RoomPhysicsLoop {
     }
     this.metrics.received++;
     if (typeof data.seq === 'number') this.lastSeqByRole[role] = data.seq;
-    this.latestInput = { ...data, role };
-  }
 
-  flushLatest(): void {
-    this.applyLatestInput();
-    this.latestInput = null;
-  }
-
-  private tick(): void {
     if (this.room.state.turnPhase !== 'waiting_pour') {
-      if (this.latestInput) this.metrics.phaseSkipped++;
+      this.metrics.phaseSkipped++;
       return;
     }
-    this.applyLatestInput();
-  }
-
-  private applyLatestInput(): void {
-    const input = this.latestInput;
-    if (!input) {
-      this.metrics.ticksNoInput++;
-      return;
-    }
-    if (this.room.state.currentTurn !== input.role) {
+    if (this.room.state.currentTurn !== role) {
       this.metrics.turnMismatch++;
       return;
     }
-    if (!this.room.state.validateTurnContext(input.turnNumber)) {
+    if (!this.room.state.validateTurnContext(data.turnNumber)) {
       this.metrics.contextFail++;
       return;
     }
 
     const opponent = this.room.players.find((_, index) => (
-      input.role === 'p1' ? index === 1 : index === 0
+      role === 'p1' ? index === 1 : index === 0
     ));
     if (opponent?.socketId) {
       this.metrics.relayed++;
       this.io.to(opponent.socketId).emit('OPPONENT_SHAKE_STATE', {
-        turnNumber: input.turnNumber,
-        seq: input.seq,
-        clientSentAt: input.clientSentAt,
+        turnNumber: data.turnNumber,
+        seq: data.seq,
+        clientSentAt: data.clientSentAt,
         serverSentAt: Date.now(),
-        cupPosition: input.cupPosition,
-        cupQuaternion: input.cupQuaternion,
-        diceStates: input.diceStates,
+        cupPosition: data.cupPosition,
+        cupQuaternion: data.cupQuaternion,
+        diceStates: data.diceStates,
       });
     } else {
       this.metrics.noOpponent++;
     }
-    this.latestInput = null;
   }
+
+  flushLatest(): void {}
 }
