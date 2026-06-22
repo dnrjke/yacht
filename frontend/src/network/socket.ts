@@ -238,7 +238,7 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
 
   socket.on('SHAKE_RELAY_METRICS', (data: any) => {
     pushDebugLog('SHAKE_RELAY_METRICS', data);
-    setServerTimelines(data?.serverArrival ?? null, data?.p1Emit ?? null);
+    setServerTimelines(data?.arrivalTimeline ?? null, data?.p1Emit ?? null);
   });
 
   return socket;
