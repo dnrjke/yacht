@@ -12,10 +12,13 @@ const buffer: ShakeFrame[] = [];
 const BUFFER_MAX = 24;
 const STALE_MS = 900;
 const SHAKE_INTERPOLATION_DELAY_MS = 180;
+const FRAME_DT = 1000 / 60;
+const MAX_DRIFT_MS = 500;
 
 let lastReceived = 0;
 let cachedResult: ShakeFrame | null = null;
 let cacheTime = 0;
+let seqBase: { seq: number; time: number } | null = null;
 
 interface ShakeMetrics {
   arrivalGaps: number[];
@@ -68,13 +71,34 @@ export function resetShakeMetrics(): void {
   metrics.bufferSizeAtConsume.length = 0;
 }
 
-export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'>): void {
+export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: number }): void {
   const now = performance.now();
   if (metrics.lastArrival > 0) {
     metrics.arrivalGaps.push(Math.round(now - metrics.lastArrival));
   }
   metrics.lastArrival = now;
-  buffer.push({ ...data, receivedAt: now });
+
+  let receivedAt: number;
+  const seq = (data as any).seq;
+  if (typeof seq === 'number') {
+    if (!seqBase) {
+      seqBase = { seq, time: now };
+    }
+    receivedAt = seqBase.time + (seq - seqBase.seq) * FRAME_DT;
+    if (Math.abs(receivedAt - now) > MAX_DRIFT_MS) {
+      seqBase = { seq, time: now };
+      receivedAt = now;
+    }
+  } else {
+    receivedAt = now;
+  }
+
+  buffer.push({
+    cupPosition: data.cupPosition,
+    cupQuaternion: data.cupQuaternion,
+    diceStates: data.diceStates,
+    receivedAt,
+  });
   lastReceived = now;
   while (buffer.length > BUFFER_MAX) buffer.shift();
 }
@@ -138,6 +162,7 @@ export function isShakeActive(): boolean {
 export function clearShakeBuffer(): void {
   buffer.length = 0;
   lastReceived = 0;
+  seqBase = null;
 }
 
 export function getShakeBufferDebugSnapshot(): {
