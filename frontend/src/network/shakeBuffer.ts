@@ -8,20 +8,72 @@ interface ShakeFrame {
   receivedAt: number;
 }
 
-import { spectatorTuning } from '../debug/spectatorTuning';
-
 const buffer: ShakeFrame[] = [];
 const BUFFER_MAX = 24;
 const STALE_MS = 900;
-const EXTRAP_MAX_MS = 50;
+const SHAKE_INTERPOLATION_DELAY_MS = 180;
 
 let lastReceived = 0;
 let cachedResult: ShakeFrame | null = null;
 let cacheTime = 0;
-let prevFrame: ShakeFrame | null = null;
+
+interface ShakeMetrics {
+  arrivalGaps: number[];
+  underruns: number;
+  interpolations: number;
+  lastArrival: number;
+  lastConsumeT: number;
+  bufferSizeAtConsume: number[];
+}
+
+const metrics: ShakeMetrics = {
+  arrivalGaps: [],
+  underruns: 0,
+  interpolations: 0,
+  lastArrival: 0,
+  lastConsumeT: 0,
+  bufferSizeAtConsume: [],
+};
+
+export function getShakeMetrics() {
+  const gaps = metrics.arrivalGaps;
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const sizes = metrics.bufferSizeAtConsume;
+  return {
+    totalFrames: gaps.length,
+    underruns: metrics.underruns,
+    interpolations: metrics.interpolations,
+    arrivalGap: gaps.length > 0 ? {
+      min: sorted[0],
+      median: sorted[Math.floor(sorted.length / 2)],
+      p95: sorted[Math.floor(sorted.length * 0.95)],
+      max: sorted[sorted.length - 1],
+      mean: Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length),
+    } : null,
+    bufferSize: sizes.length > 0 ? {
+      min: Math.min(...sizes),
+      max: Math.max(...sizes),
+      mean: +(sizes.reduce((a, b) => a + b, 0) / sizes.length).toFixed(1),
+    } : null,
+    lastConsumeT: +metrics.lastConsumeT.toFixed(3),
+  };
+}
+
+export function resetShakeMetrics(): void {
+  metrics.arrivalGaps.length = 0;
+  metrics.underruns = 0;
+  metrics.interpolations = 0;
+  metrics.lastArrival = 0;
+  metrics.lastConsumeT = 0;
+  metrics.bufferSizeAtConsume.length = 0;
+}
 
 export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'>): void {
   const now = performance.now();
+  if (metrics.lastArrival > 0) {
+    metrics.arrivalGaps.push(Math.round(now - metrics.lastArrival));
+  }
+  metrics.lastArrival = now;
   buffer.push({ ...data, receivedAt: now });
   lastReceived = now;
   while (buffer.length > BUFFER_MAX) buffer.shift();
@@ -38,19 +90,19 @@ export function interpolateShake(): ShakeFrame | null {
   }
 
   if (buffer.length === 1) {
-    cachedResult = extrapolateIfPossible(buffer[0], now);
+    cachedResult = buffer[0];
     return cachedResult;
   }
 
-  const targetTime = now - spectatorTuning.shakeInterpolationDelayMs;
+  const targetTime = now - SHAKE_INTERPOLATION_DELAY_MS;
   while (buffer.length >= 2 && buffer[1].receivedAt <= targetTime) {
-    prevFrame = buffer[0];
     buffer.shift();
   }
 
   if (buffer.length < 2) {
-    const sole = buffer[0] ?? null;
-    cachedResult = sole ? extrapolateIfPossible(sole, now) : null;
+    metrics.underruns++;
+    metrics.bufferSizeAtConsume.push(buffer.length);
+    cachedResult = buffer[0] ?? null;
     return cachedResult;
   }
 
@@ -58,7 +110,6 @@ export function interpolateShake(): ShakeFrame | null {
   const b = buffer[1];
   const frameDuration = b.receivedAt - a.receivedAt;
   if (frameDuration <= 0) {
-    prevFrame = a;
     buffer.shift();
     cachedResult = b;
     return cachedResult;
@@ -66,15 +117,16 @@ export function interpolateShake(): ShakeFrame | null {
 
   const elapsed = Math.max(0, targetTime - a.receivedAt);
   const t = Math.min(elapsed / frameDuration, 1);
+  metrics.interpolations++;
+  metrics.lastConsumeT = t;
+  metrics.bufferSizeAtConsume.push(buffer.length);
 
   if (t >= 1) {
-    prevFrame = a;
     buffer.shift();
     cachedResult = b;
     return cachedResult;
   }
 
-  prevFrame = a;
   cachedResult = lerpFrames(a, b, t);
   return cachedResult;
 }
@@ -86,7 +138,6 @@ export function isShakeActive(): boolean {
 export function clearShakeBuffer(): void {
   buffer.length = 0;
   lastReceived = 0;
-  prevFrame = null;
 }
 
 export function getShakeBufferDebugSnapshot(): {
@@ -98,7 +149,7 @@ export function getShakeBufferDebugSnapshot(): {
 } {
   const now = performance.now();
   return {
-    bufferMs: spectatorTuning.shakeInterpolationDelayMs,
+    bufferMs: SHAKE_INTERPOLATION_DELAY_MS,
     size: buffer.length,
     lastReceivedAgeMs: lastReceived > 0 ? Math.round(now - lastReceived) : null,
     oldestAgeMs: buffer[0] ? Math.round(now - buffer[0].receivedAt) : null,
@@ -140,16 +191,6 @@ function slerpQuat(
     z: s0 * a.z + s1 * b.z,
     w: s0 * a.w + s1 * b.w,
   };
-}
-
-function extrapolateIfPossible(latest: ShakeFrame, now: number): ShakeFrame {
-  if (!spectatorTuning.extrapolation || !prevFrame) return latest;
-  const dt = latest.receivedAt - prevFrame.receivedAt;
-  if (dt <= 0) return latest;
-  const overshot = Math.min(now - latest.receivedAt, EXTRAP_MAX_MS);
-  if (overshot <= 0) return latest;
-  const t = overshot / dt;
-  return lerpFrames(prevFrame, latest, 1 + t);
 }
 
 function lerpFrames(a: ShakeFrame, b: ShakeFrame, t: number): ShakeFrame {

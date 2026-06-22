@@ -3,7 +3,7 @@ import { derivePlacementOrder, GameSnapshot } from '@yacht/core';
 import { useGameStore } from '../store/gameStore';
 import { emitPourResult, getPhysicsEngine } from '../physics/physicsEngine';
 import { getReconnectInfo, clearReconnectInfo } from './identity';
-import { pushShakeFrame, clearShakeBuffer } from './shakeBuffer';
+import { pushShakeFrame, clearShakeBuffer, getShakeMetrics, resetShakeMetrics } from './shakeBuffer';
 import { applySpectatorPourBuffer } from './spectatorBuffer';
 import { soundManager } from '../utils/soundManager';
 import { pushDebugLog } from '../components/ui/DebugOverlay';
@@ -65,7 +65,11 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
   });
 
   socket.on('POUR_RESULT', (result: any) => {
+    const shakeMetricsSnapshot = getShakeMetrics();
+    clearShakeBuffer();
+    resetShakeMetrics();
     pushDebugLog('POUR_RESULT', { finalValues: result.finalValues, rollCount: result.rollCount, frames: result.diceTrajectory?.length, serverSimMs: result.serverSimMs });
+    pushDebugLog('SHAKE_METRICS', shakeMetricsSnapshot);
     const s = useGameStore.getState();
     if (s.gameMode === 'online') {
       if (!isCurrentTurnEvent(result.turnNumber)) return;

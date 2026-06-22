@@ -4,10 +4,9 @@ import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { soundManager } from '../../utils/soundManager';
 import { getPhysicsEngine, emitPourResult, onPourResult, onAiPour } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
-import { interpolateShake, isShakeActive, clearShakeBuffer } from '../../network/shakeBuffer';
+import { interpolateShake, isShakeActive } from '../../network/shakeBuffer';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import { pushDebugLog } from '../ui/DebugOverlay';
-import { spectatorTuning } from '../../debug/spectatorTuning';
 import * as THREE from 'three';
 import { BOARD_CONSTANTS } from '@yacht/core';
 
@@ -19,11 +18,11 @@ const AI_SHAKE_TIMEOUT = 5;
 
 const _slerp = new THREE.Quaternion();
 const _slerpB = new THREE.Quaternion();
-const _tmpVec3 = new THREE.Vector3();
 const _cupRestPos = new THREE.Vector3(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
 const FIXED_INPUT_DT = 1 / 60;
 const MAX_FIXED_INPUT_STEPS = 5;
 const CUP_FOLLOW_ALPHA = 0.2;
+const OPPONENT_SHAKE_HOLD_MS = 700;
 let lastPreviewCupPlaybackTime = 0;
 let awaitingAuthoritativeCupResult = false;
 
@@ -276,45 +275,42 @@ export function PhysicsCup() {
     }
 
     if (cupPlayback.current) {
+      const FRAME_DT = 1 / 60;
       const pb = cupPlayback.current;
-      const buffering = pb.scheduledStartAt != null && performance.now() < pb.scheduledStartAt;
+      const lastIdx = pb.frames.length - 1;
 
-      if (!buffering) {
-        const FRAME_DT = 1 / 60;
-        const lastIdx = pb.frames.length - 1;
-        if (pb.scheduledStartAt != null) {
-          pb.scheduledStartAt = undefined;
-          clearShakeBuffer();
-        }
-        pb.time += Math.min(delta, FRAME_DT);
-        if (pb.preview) lastPreviewCupPlaybackTime = pb.time;
-        const fi = pb.time / FRAME_DT;
-
-        if (fi < lastIdx) {
-          const f0 = Math.floor(fi);
-          const f1 = f0 + 1;
-          const alpha = fi - f0;
-          const a = pb.frames[f0];
-          const b = pb.frames[f1];
-          cupRef.current.position.set(
-            a.position.x + (b.position.x - a.position.x) * alpha,
-            a.position.y + (b.position.y - a.position.y) * alpha,
-            a.position.z + (b.position.z - a.position.z) * alpha,
-          );
-          _slerp.set(a.quaternion.x, a.quaternion.y, a.quaternion.z, a.quaternion.w);
-          _slerpB.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
-          _slerp.slerp(_slerpB, alpha);
-          cupRef.current.quaternion.copy(_slerp);
-        } else {
-          cupPlayback.current = null;
-          isPouring.current = false;
-          cupRef.current.position.set(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
-          cupRef.current.quaternion.set(0, 0, 0, 1);
-        }
+      if (pb.scheduledStartAt && performance.now() < pb.scheduledStartAt) {
         updateCupVisualDebugSnapshot('cupPlayback', cupRef.current, pb);
         return;
       }
-      // buffering: fall through to opponent shake path below
+      pb.scheduledStartAt = undefined;
+      pb.time += Math.min(delta, FRAME_DT);
+      if (pb.preview) lastPreviewCupPlaybackTime = pb.time;
+      const fi = pb.time / FRAME_DT;
+
+      if (fi < lastIdx) {
+        const f0 = Math.floor(fi);
+        const f1 = f0 + 1;
+        const alpha = fi - f0;
+        const a = pb.frames[f0];
+        const b = pb.frames[f1];
+        cupRef.current.position.set(
+          a.position.x + (b.position.x - a.position.x) * alpha,
+          a.position.y + (b.position.y - a.position.y) * alpha,
+          a.position.z + (b.position.z - a.position.z) * alpha,
+        );
+        _slerp.set(a.quaternion.x, a.quaternion.y, a.quaternion.z, a.quaternion.w);
+        _slerpB.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+        _slerp.slerp(_slerpB, alpha);
+        cupRef.current.quaternion.copy(_slerp);
+      } else {
+        cupPlayback.current = null;
+        isPouring.current = false;
+        cupRef.current.position.set(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
+        cupRef.current.quaternion.set(0, 0, 0, 1);
+      }
+      updateCupVisualDebugSnapshot('cupPlayback', cupRef.current, pb);
+      return;
     }
 
     // AI 셰이크: 목표 지점으로 이동하며 진동 — 내부 주사위도 실제로 덜그럭거림
@@ -369,24 +365,14 @@ export function PhysicsCup() {
         const frame = interpolateShake();
         if (frame) {
           lastOpponentShakeAt.current = performance.now();
-          if (spectatorTuning.smoothLerp) {
-            const alpha = Math.min(1, spectatorTuning.smoothLerpAlpha + delta * 12);
-            _tmpVec3.set(frame.cupPosition.x, frame.cupPosition.y, frame.cupPosition.z);
-            cupRef.current.position.lerp(_tmpVec3, alpha);
-            if (frame.cupQuaternion) {
-              _slerpB.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
-              cupRef.current.quaternion.slerp(_slerpB, alpha);
-            }
-          } else {
-            cupRef.current.position.set(frame.cupPosition.x, frame.cupPosition.y, frame.cupPosition.z);
-            if (frame.cupQuaternion) {
-              cupRef.current.quaternion.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
-            }
+          cupRef.current.position.set(frame.cupPosition.x, frame.cupPosition.y, frame.cupPosition.z);
+          if (frame.cupQuaternion) {
+            cupRef.current.quaternion.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
           }
           updateCupVisualDebugSnapshot('opponentShake', cupRef.current, null);
         }
       } else if (opponentShakeSound.current) {
-        const shouldReturnToRest = performance.now() - lastOpponentShakeAt.current > spectatorTuning.opponentShakeHoldMs;
+        const shouldReturnToRest = performance.now() - lastOpponentShakeAt.current > OPPONENT_SHAKE_HOLD_MS;
         if (shouldReturnToRest) {
           opponentShakeSound.current = false;
           soundManager.stopLoop('rolling_dice', 200);

@@ -2,8 +2,7 @@ import { useRef, useEffect, useMemo } from 'react';
 import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { getPhysicsEngine, onPourResult } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
-import { interpolateShake, isShakeActive, clearShakeBuffer } from '../../network/shakeBuffer';
-import { spectatorTuning } from '../../debug/spectatorTuning';
+import { interpolateShake, isShakeActive } from '../../network/shakeBuffer';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import * as THREE from 'three';
 import { YACHT_CONSTANTS, BOARD_CONSTANTS, detectCombo, CUP_DICE_OFFSETS, getTraySlotPosition } from '@yacht/core';
@@ -29,8 +28,6 @@ const _center = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
 const _correction = new THREE.Quaternion();
 const _localY = new THREE.Vector3(0, 1, 0);
-const _shakeLerpPos = new THREE.Vector3();
-const _shakeLerpQuat = new THREE.Quaternion();
 const _targetPos = new THREE.Vector3();
 const _targetQuat = new THREE.Quaternion();
 const _lerpQA = new THREE.Quaternion();
@@ -580,21 +577,18 @@ export function PhysicsDice() {
       const pb = playbackData.current;
       const lastIdx = pb.frames.length - 1;
 
-      const buffering = pb.scheduledStartAt != null && performance.now() < pb.scheduledStartAt;
-      if (buffering) {
+      if (pb.scheduledStartAt && performance.now() < pb.scheduledStartAt) {
         updateDicePlaybackDebugSnapshot({
           status: 'buffering',
           totalFrames: pb.frames.length,
           currentFrame: 0,
           elapsedMs: 0,
-          remainingMs: Math.round(pb.scheduledStartAt! - performance.now()),
+          remainingMs: Math.round(pb.scheduledStartAt - performance.now()),
         });
-        // fall through to opponent shake path so dice keep shaking during buffer wait
-      } else {
-      if (pb.scheduledStartAt != null) {
-        pb.scheduledStartAt = undefined;
-        clearShakeBuffer();
+        updateRenderedDiceDebugSnapshot(diceRefs, camera);
+        return;
       }
+      pb.scheduledStartAt = undefined;
       pb.time += Math.min(delta, FRAME_DT);
       const fi = pb.time / FRAME_DT;
       if (pb.preview) lastPreviewPlaybackTime = pb.time;
@@ -670,28 +664,17 @@ export function PhysicsDice() {
       }
       updateRenderedDiceDebugSnapshot(diceRefs, camera);
       return;
-      }
-      // buffering: fall through to shake path below
     }
 
     // Online opponent shake: apply interpolated dice data from network
     if (store.gameMode === 'online' && !isMyTurn() && isShakeActive()) {
       const frame = interpolateShake();
       if (frame && frame.diceStates.length === 5) {
-        const doLerp = spectatorTuning.smoothLerp;
-        const alpha = doLerp ? Math.min(1, spectatorTuning.smoothLerpAlpha + delta * 12) : 1;
         frame.diceStates.forEach((ds, idx) => {
           const mesh = diceRefs.current[idx];
           if (mesh) {
-            if (doLerp) {
-              _shakeLerpPos.set(ds.position.x, ds.position.y, ds.position.z);
-              mesh.position.lerp(_shakeLerpPos, alpha);
-              _shakeLerpQuat.set(ds.quaternion.x, ds.quaternion.y, ds.quaternion.z, ds.quaternion.w);
-              mesh.quaternion.slerp(_shakeLerpQuat, alpha);
-            } else {
-              mesh.position.set(ds.position.x, ds.position.y, ds.position.z);
-              mesh.quaternion.set(ds.quaternion.x, ds.quaternion.y, ds.quaternion.z, ds.quaternion.w);
-            }
+            mesh.position.set(ds.position.x, ds.position.y, ds.position.z);
+            mesh.quaternion.set(ds.quaternion.x, ds.quaternion.y, ds.quaternion.z, ds.quaternion.w);
           }
         });
       }

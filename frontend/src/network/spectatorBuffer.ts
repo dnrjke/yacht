@@ -1,6 +1,6 @@
 import type { PourResult } from '../physics/PhysicsWorld';
-import { spectatorTuning } from '../debug/spectatorTuning';
 
+export const SPECTATOR_POUR_BUFFER_MS = 250;
 
 interface SpectatorBufferDebugSnapshot {
   updatedAt: number;
@@ -18,17 +18,16 @@ let spectatorBufferDebugSnapshot: SpectatorBufferDebugSnapshot | null = null;
 
 export function applySpectatorPourBuffer(result: PourResult & { turnNumber?: number; rollId?: number }): PourResult {
   const queuedAt = performance.now();
-  const bufferMs = spectatorTuning.spectatorPourBufferMs;
-  const scheduledStartAt = queuedAt + bufferMs;
+  const scheduledStartAt = queuedAt + SPECTATOR_POUR_BUFFER_MS;
   const updatedAt = Date.now();
 
   spectatorBufferDebugSnapshot = {
     updatedAt,
     updatedAtIso: new Date(updatedAt).toISOString(),
-    bufferMs,
+    bufferMs: SPECTATOR_POUR_BUFFER_MS,
     queuedAt,
     scheduledStartAt,
-    remainingMs: bufferMs,
+    remainingMs: SPECTATOR_POUR_BUFFER_MS,
     turnNumber: result.turnNumber,
     rollId: result.rollId,
     frames: result.diceTrajectory.length,
@@ -37,7 +36,7 @@ export function applySpectatorPourBuffer(result: PourResult & { turnNumber?: num
   return {
     ...result,
     spectator: true,
-    spectatorBufferMs: bufferMs,
+    spectatorBufferMs: SPECTATOR_POUR_BUFFER_MS,
     scheduledStartAt,
   };
 }

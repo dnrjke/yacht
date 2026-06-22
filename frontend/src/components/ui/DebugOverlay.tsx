@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { getPhysicsEngine } from '../../physics/physicsEngine';
-import { getShakeBufferDebugSnapshot } from '../../network/shakeBuffer';
+import { getShakeBufferDebugSnapshot, getShakeMetrics } from '../../network/shakeBuffer';
 import { getSpectatorBufferDebugSnapshot } from '../../network/spectatorBuffer';
 import { getCupVisualDebugSnapshot } from '../3d/PhysicsCup';
 import { getDicePlaybackDebugSnapshot, getRenderedDiceDebugSnapshot } from '../3d/PhysicsDice';
@@ -114,6 +114,7 @@ function buildSnapshot() {
 
   snap.spectatorBuffer = spectatorBuffer;
   snap.shakeBuffer = shakeBuffer;
+  snap.shakeMetrics = getShakeMetrics();
 
   return snap;
 }
