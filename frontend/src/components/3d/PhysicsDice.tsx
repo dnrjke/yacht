@@ -2,7 +2,7 @@ import { useRef, useEffect, useMemo } from 'react';
 import { useGameStore, isMyTurn } from '../../store/gameStore';
 import { getPhysicsEngine, onPourResult } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
-import { interpolateShake, isShakeActive } from '../../network/shakeBuffer';
+import { interpolateShake, isShakeActive, clearShakeBuffer } from '../../network/shakeBuffer';
 import { spectatorTuning } from '../../debug/spectatorTuning';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import * as THREE from 'three';
@@ -580,18 +580,21 @@ export function PhysicsDice() {
       const pb = playbackData.current;
       const lastIdx = pb.frames.length - 1;
 
-      if (pb.scheduledStartAt && performance.now() < pb.scheduledStartAt) {
+      const buffering = pb.scheduledStartAt != null && performance.now() < pb.scheduledStartAt;
+      if (buffering) {
         updateDicePlaybackDebugSnapshot({
           status: 'buffering',
           totalFrames: pb.frames.length,
           currentFrame: 0,
           elapsedMs: 0,
-          remainingMs: Math.round(pb.scheduledStartAt - performance.now()),
+          remainingMs: Math.round(pb.scheduledStartAt! - performance.now()),
         });
-        updateRenderedDiceDebugSnapshot(diceRefs, camera);
-        return;
+        // fall through to opponent shake path so dice keep shaking during buffer wait
+      } else {
+      if (pb.scheduledStartAt != null) {
+        pb.scheduledStartAt = undefined;
+        clearShakeBuffer();
       }
-      pb.scheduledStartAt = undefined;
       pb.time += Math.min(delta, FRAME_DT);
       const fi = pb.time / FRAME_DT;
       if (pb.preview) lastPreviewPlaybackTime = pb.time;
@@ -667,6 +670,8 @@ export function PhysicsDice() {
       }
       updateRenderedDiceDebugSnapshot(diceRefs, camera);
       return;
+      }
+      // buffering: fall through to shake path below
     }
 
     // Online opponent shake: apply interpolated dice data from network

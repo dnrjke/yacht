@@ -65,7 +65,6 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
   });
 
   socket.on('POUR_RESULT', (result: any) => {
-    clearShakeBuffer();
     pushDebugLog('POUR_RESULT', { finalValues: result.finalValues, rollCount: result.rollCount, frames: result.diceTrajectory?.length, serverSimMs: result.serverSimMs });
     const s = useGameStore.getState();
     if (s.gameMode === 'online') {
