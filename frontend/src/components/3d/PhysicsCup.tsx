@@ -96,32 +96,67 @@ function recordFrame(cup: THREE.Group, source: string): void {
   prevSource = source;
 }
 
+/**
+ * Detect real-time freeze/stutter during opponent shake.
+ *
+ * Two independent checks over the last WINDOW frames:
+ *
+ * 1. **Temporal gap**: any consecutive pair with dt > GAP_THRESH_MS indicates
+ *    the render loop received no new socket data for that span — a network
+ *    stutter the spectator will perceive as a hitch.
+ *
+ * 2. **Position stall**: STALL_COUNT or more consecutive frames where position
+ *    didn't change (dist < EPSILON) while the source is opponentShake/shakeHold.
+ *    Catches cases where frames arrive on time but carry duplicate positions
+ *    (server-side freeze / packet duplication).
+ *
+ * Both checks only consider frames whose source is in the whitelist.
+ * Runs every rAF — no allocations (reuses index arithmetic on the ring).
+ */
+const FREEZE_WINDOW     = 12;          // frames to inspect
+const FREEZE_GAP_MS     = 50;          // ~3× a 60 Hz frame
+const FREEZE_STALL_COUNT = 2;          // consecutive identical-position frames
+const FREEZE_POS_EPSILON = 0.0005;     // position-change threshold
+
 export function isCurrentlyFreezing(): boolean {
   const len = frameRing.length;
-  if (len < 6) return false;
+  if (len < FREEZE_WINDOW) return false;
 
+  // Newest frame must be in a shake source — otherwise no freeze to report.
   const newest = frameRing[(frameRingIdx - 1 + len) % len];
   if (newest.src !== 'opponentShake' && newest.src !== 'shakeHold') return false;
 
-  const samples: FrameSample[] = [];
-  for (let k = 0; k < 6; k++) {
-    samples.unshift(frameRing[(frameRingIdx - 1 - k + len * 2) % len]);
+  let stallRun = 0;
+
+  for (let k = 1; k < FREEZE_WINDOW; k++) {
+    const cur  = frameRing[(frameRingIdx - 1 - (k - 1) + len * 2) % len];
+    const prev = frameRing[(frameRingIdx - 1 - k       + len * 2) % len];
+
+    // Only inspect shake-source frames.
+    if (
+      (cur.src !== 'opponentShake' && cur.src !== 'shakeHold') ||
+      (prev.src !== 'opponentShake' && prev.src !== 'shakeHold')
+    ) {
+      stallRun = 0;
+      continue;
+    }
+
+    // --- Check 1: temporal gap ---
+    const dt = cur.t - prev.t;
+    if (dt > FREEZE_GAP_MS) return true;
+
+    // --- Check 2: position stall ---
+    const dx = cur.px - prev.px;
+    const dy = cur.py - prev.py;
+    const dz = cur.pz - prev.pz;
+    const dist = dx * dx + dy * dy + dz * dz; // squared is fine for threshold
+    if (dist < FREEZE_POS_EPSILON * FREEZE_POS_EPSILON) {
+      stallRun++;
+      if (stallRun >= FREEZE_STALL_COUNT) return true;
+    } else {
+      stallRun = 0;
+    }
   }
-
-  const speeds: number[] = [];
-  for (let i = 1; i < samples.length; i++) {
-    const a = samples[i - 1], b = samples[i];
-    const dt = b.t - a.t;
-    if (dt <= 0) { speeds.push(0); continue; }
-    const dx = b.px - a.px, dy = b.py - a.py, dz = b.pz - a.pz;
-    speeds.push(Math.sqrt(dx * dx + dy * dy + dz * dz) / dt);
-  }
-
-  const recentSpeed = speeds[speeds.length - 1];
-  const priorAvg = speeds.slice(0, -2).reduce((a, b) => a + b, 0) / Math.max(1, speeds.length - 2);
-
-  if (recentSpeed < 0.0001 && priorAvg > 0.001) return true;
-  if (priorAvg > 0.005 && recentSpeed < priorAvg * 0.1) return true;
 
   return false;
 }
