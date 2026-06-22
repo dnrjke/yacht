@@ -31,7 +31,7 @@ type CupPlayback = { frames: any[], time: number, preview?: boolean, scheduledSt
 interface CupVisualDebugSnapshot {
   updatedAt: number;
   updatedAtIso: string;
-  source: 'idle' | 'dragging' | 'anticipation' | 'cupPlayback' | 'opponentShake' | 'restLerp' | 'cancelled';
+  source: 'idle' | 'dragging' | 'anticipation' | 'cupPlayback' | 'opponentShake' | 'shakeHold' | 'restLerp' | 'cancelled';
   visualPosition: { x: number; y: number; z: number };
   visualQuaternion: { x: number; y: number; z: number; w: number };
   physicsPosition?: { x: number; y: number; z: number };
@@ -111,7 +111,7 @@ export function isCurrentlyFreezing(): boolean {
     if (dist >= 0.001 || dq <= 0.9999) return false;
   }
   const newest = frameRing[(frameRingIdx - 1 + len) % len];
-  return newest.src === 'opponentShake';
+  return newest.src !== 'restLerp' && newest.src !== 'idle' && newest.src !== 'cancelled';
 }
 
 export function getCupFrameTrace() {
@@ -495,6 +495,8 @@ export function PhysicsCup() {
           cupRef.current.position.lerp(_cupRestPos, Math.min(1, delta * 8));
           cupRef.current.quaternion.slerp(_slerp.set(0, 0, 0, 1), Math.min(1, delta * 8));
           updateCupVisualDebugSnapshot('restLerp', cupRef.current, null);
+        } else {
+          updateCupVisualDebugSnapshot('shakeHold', cupRef.current, null);
         }
       } else {
         cupRef.current.position.lerp(_cupRestPos, Math.min(1, delta * 8));
