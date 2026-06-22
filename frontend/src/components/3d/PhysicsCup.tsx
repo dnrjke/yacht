@@ -7,6 +7,7 @@ import { getSocket } from '../../network/socket';
 import { interpolateShake, isShakeActive } from '../../network/shakeBuffer';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import { pushDebugLog } from '../ui/DebugOverlay';
+import { spectatorTuning } from '../../debug/spectatorTuning';
 import * as THREE from 'three';
 import { BOARD_CONSTANTS } from '@yacht/core';
 
@@ -22,7 +23,6 @@ const _cupRestPos = new THREE.Vector3(CUP_REST_X, CUP_REST_Y, CUP_REST_Z);
 const FIXED_INPUT_DT = 1 / 60;
 const MAX_FIXED_INPUT_STEPS = 5;
 const CUP_FOLLOW_ALPHA = 0.2;
-const OPPONENT_SHAKE_HOLD_MS = 700;
 let lastPreviewCupPlaybackTime = 0;
 let awaitingAuthoritativeCupResult = false;
 
@@ -372,7 +372,7 @@ export function PhysicsCup() {
           updateCupVisualDebugSnapshot('opponentShake', cupRef.current, null);
         }
       } else if (opponentShakeSound.current) {
-        const shouldReturnToRest = performance.now() - lastOpponentShakeAt.current > OPPONENT_SHAKE_HOLD_MS;
+        const shouldReturnToRest = performance.now() - lastOpponentShakeAt.current > spectatorTuning.opponentShakeHoldMs;
         if (shouldReturnToRest) {
           opponentShakeSound.current = false;
           soundManager.stopLoop('rolling_dice', 200);

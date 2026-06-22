@@ -11,7 +11,7 @@ interface ShakeFrame {
 const buffer: ShakeFrame[] = [];
 const BUFFER_MAX = 24;
 const STALE_MS = 900;
-const SHAKE_INTERPOLATION_DELAY_MS = 180;
+import { spectatorTuning } from '../debug/spectatorTuning';
 
 let lastReceived = 0;
 let cachedResult: ShakeFrame | null = null;
@@ -39,7 +39,7 @@ export function interpolateShake(): ShakeFrame | null {
     return cachedResult;
   }
 
-  const targetTime = now - SHAKE_INTERPOLATION_DELAY_MS;
+  const targetTime = now - spectatorTuning.shakeInterpolationDelayMs;
   while (buffer.length >= 2 && buffer[1].receivedAt <= targetTime) {
     buffer.shift();
   }
@@ -89,7 +89,7 @@ export function getShakeBufferDebugSnapshot(): {
 } {
   const now = performance.now();
   return {
-    bufferMs: SHAKE_INTERPOLATION_DELAY_MS,
+    bufferMs: spectatorTuning.shakeInterpolationDelayMs,
     size: buffer.length,
     lastReceivedAgeMs: lastReceived > 0 ? Math.round(now - lastReceived) : null,
     oldestAgeMs: buffer[0] ? Math.round(now - buffer[0].receivedAt) : null,
