@@ -107,9 +107,6 @@ export class RoomPhysicsLoop {
       return;
     }
 
-    this.room.physics.updateCupTransform(input.cupPosition, input.cupQuaternion);
-    this.room.physics.step();
-
     const opponent = this.room.players.find((_, index) => (
       input.role === 'p1' ? index === 1 : index === 0
     ));
@@ -122,10 +119,11 @@ export class RoomPhysicsLoop {
         serverSentAt: Date.now(),
         cupPosition: input.cupPosition,
         cupQuaternion: input.cupQuaternion,
-        diceStates: input.diceStates ?? this.room.physics.getDiceStates(),
+        diceStates: input.diceStates,
       });
     } else {
       this.metrics.noOpponent++;
     }
+    this.latestInput = null;
   }
 }
