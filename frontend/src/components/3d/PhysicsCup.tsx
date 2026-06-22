@@ -96,6 +96,24 @@ function recordFrame(cup: THREE.Group, source: string): void {
   prevSource = source;
 }
 
+export function isCurrentlyFreezing(): boolean {
+  const len = frameRing.length;
+  if (len < 3) return false;
+  for (let k = 1; k < 3; k++) {
+    const idx = (frameRingIdx - 1 - k + len * 2) % len;
+    const prev = (idx - 1 + len) % len;
+    const a = frameRing[prev];
+    const b = frameRing[idx];
+    if (!a || !b) return false;
+    const dx = b.px - a.px, dy = b.py - a.py, dz = b.pz - a.pz;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const dq = Math.abs(a.qx * b.qx + a.qy * b.qy + a.qz * b.qz + a.qw * b.qw);
+    if (dist >= 0.001 || dq <= 0.9999) return false;
+  }
+  const newest = frameRing[(frameRingIdx - 1 + len) % len];
+  return newest.src === 'opponentShake';
+}
+
 export function getCupFrameTrace() {
   const ordered: FrameSample[] = [];
   const len = frameRing.length;

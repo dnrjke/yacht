@@ -3,7 +3,7 @@ import { useGameStore } from '../../store/gameStore';
 import { getPhysicsEngine } from '../../physics/physicsEngine';
 import { getShakeBufferDebugSnapshot, getShakeMetrics } from '../../network/shakeBuffer';
 import { getSpectatorBufferDebugSnapshot } from '../../network/spectatorBuffer';
-import { getCupVisualDebugSnapshot, getCupFrameTrace } from '../3d/PhysicsCup';
+import { getCupVisualDebugSnapshot, getCupFrameTrace, isCurrentlyFreezing } from '../3d/PhysicsCup';
 import { getDicePlaybackDebugSnapshot, getRenderedDiceDebugSnapshot } from '../3d/PhysicsDice';
 
 interface LogEntry {
@@ -13,7 +13,7 @@ interface LogEntry {
 }
 
 const MAX_LOG = 50;
-const DEBUG_SCHEMA = 'online-pour-debug-v14';
+const DEBUG_SCHEMA = 'online-pour-debug-v15';
 
 let logBuffer: LogEntry[] = [];
 let logSeq = 0;
@@ -128,6 +128,42 @@ function getTurnPhase(s: ReturnType<typeof useGameStore.getState>): string {
   return 'other';
 }
 
+function FreezeIndicator() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let raf = 0;
+    const update = () => {
+      if (ref.current) {
+        const freezing = isCurrentlyFreezing();
+        ref.current.style.display = freezing ? 'block' : 'none';
+      }
+      raf = requestAnimationFrame(update);
+    };
+    raf = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <div ref={ref} style={{
+      display: 'none',
+      position: 'fixed',
+      top: 8,
+      right: 8,
+      zIndex: 10000,
+      background: 'rgba(255,0,0,0.85)',
+      color: '#fff',
+      padding: '6px 14px',
+      borderRadius: 6,
+      fontSize: 14,
+      fontWeight: 'bold',
+      fontFamily: 'monospace',
+      pointerEvents: 'none',
+      boxShadow: '0 0 16px rgba(255,0,0,0.6)',
+    }}>
+      FREEZE
+    </div>
+  );
+}
+
 export function DebugOverlay() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -167,7 +203,7 @@ export function DebugOverlay() {
           position: 'fixed',
           bottom: 8,
           right: 8,
-          zIndex: 9999,
+          zIndex: 9998,
           background: 'rgba(0,0,0,0.6)',
           color: '#0f0',
           border: '1px solid #0f04',
@@ -194,6 +230,8 @@ export function DebugOverlay() {
   const phase = getTurnPhase(s);
 
   return (
+    <>
+    <FreezeIndicator />
     <div style={{
       position: 'fixed',
       bottom: 8,
@@ -311,6 +349,7 @@ export function DebugOverlay() {
         {logBuffer.length === 0 && <div style={{ color: '#666' }}>No events yet</div>}
       </Section>
     </div>
+    </>
   );
 }
 
