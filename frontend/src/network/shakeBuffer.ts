@@ -129,6 +129,9 @@ export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: nu
       metrics.driftResets++;
       seqBase = { seq, time: now };
       receivedAt = now;
+      // Purge stale frames whose receivedAt is based on old seqBase —
+      // they have "future" timestamps that block the interpolation loop.
+      buffer.length = 0;
     }
   } else {
     receivedAt = now;
