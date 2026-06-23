@@ -125,12 +125,21 @@ export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: nu
       seqBase = { seq, time: now };
     }
     receivedAt = seqBase.time + (seq - seqBase.seq) * FRAME_DT;
-    if (Math.abs(receivedAt - now) > MAX_DRIFT_MS) {
+    // Forward clamp: when frames arrive in TCP bursts, seq-based timing
+    // assigns receivedAt ahead of wall-clock (future). The interpolation
+    // delay (targetTime = now - 180ms) can never reach these "future"
+    // frames → t=0 stall with full buffer. Clamping to now and rebasing
+    // prevents forward drift accumulation entirely.
+    if (receivedAt > now) {
+      seqBase = { seq, time: now };
+      receivedAt = now;
+    }
+    // Backward drift: if receivedAt is far in the past, the seq timeline
+    // is broken (e.g. long network gap). Hard reset + purge stale buffer.
+    if (now - receivedAt > MAX_DRIFT_MS) {
       metrics.driftResets++;
       seqBase = { seq, time: now };
       receivedAt = now;
-      // Purge stale frames whose receivedAt is based on old seqBase —
-      // they have "future" timestamps that block the interpolation loop.
       buffer.length = 0;
     }
   } else {
