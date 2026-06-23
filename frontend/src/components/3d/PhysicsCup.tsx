@@ -23,9 +23,6 @@ const FIXED_INPUT_DT = 1 / 60;
 const MAX_FIXED_INPUT_STEPS = 5;
 const CUP_FOLLOW_ALPHA = 0.2;
 const OPPONENT_SHAKE_HOLD_MS = 700;
-const SPECTATOR_SHAKE_LERP_ALPHA = 0.5;
-const _shakeTarget = new THREE.Vector3();
-const _shakeQuatTarget = new THREE.Quaternion();
 let lastPreviewCupPlaybackTime = 0;
 let awaitingAuthoritativeCupResult = false;
 
@@ -643,11 +640,9 @@ export function PhysicsCup() {
         const frame = interpolateShake();
         if (frame) {
           lastOpponentShakeAt.current = performance.now();
-          _shakeTarget.set(frame.cupPosition.x, frame.cupPosition.y, frame.cupPosition.z);
-          cupRef.current.position.lerp(_shakeTarget, SPECTATOR_SHAKE_LERP_ALPHA);
+          cupRef.current.position.set(frame.cupPosition.x, frame.cupPosition.y, frame.cupPosition.z);
           if (frame.cupQuaternion) {
-            _shakeQuatTarget.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
-            cupRef.current.quaternion.slerp(_shakeQuatTarget, SPECTATOR_SHAKE_LERP_ALPHA);
+            cupRef.current.quaternion.set(frame.cupQuaternion.x, frame.cupQuaternion.y, frame.cupQuaternion.z, frame.cupQuaternion.w);
           }
           updateCupVisualDebugSnapshot('opponentShake', cupRef.current, null, getShakeConsumeState());
         }
