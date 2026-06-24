@@ -1,8 +1,10 @@
 import { Socket } from 'socket.io-client';
 import { pushShakeFrame } from './shakeBuffer';
 import { pushDebugLog } from '../components/ui/DebugOverlay';
+import type { PourResult } from '../physics/PhysicsWorld';
 
 const SHAKE_FRAME_MSG = 0x01;
+const POUR_RESULT_MSG = 0x02;
 const FRAME_BYTES = 172;
 const SETUP_TIMEOUT_MS = 5000;
 
@@ -12,8 +14,14 @@ let transport: 'socketio' | 'webrtc' = 'socketio';
 let setupTimer: ReturnType<typeof setTimeout> | null = null;
 let boundSocket: Socket | null = null;
 
+let dcPourResultCb: ((result: PourResult) => void) | null = null;
+
 export function getActiveTransport(): 'socketio' | 'webrtc' {
   return transport;
+}
+
+export function registerDCPourHandler(cb: (result: PourResult) => void): void {
+  dcPourResultCb = cb;
 }
 
 export function initShakeDataChannel(socket: Socket, role: 'p1' | 'p2'): void {
@@ -121,10 +129,20 @@ function setupDCHandlers(channel: RTCDataChannel): void {
 }
 
 function handleIncomingBinary(data: ArrayBuffer): void {
-  if (data.byteLength < FRAME_BYTES) return;
-  const view = new DataView(data);
-  if (view.getUint8(0) !== SHAKE_FRAME_MSG) return;
+  if (data.byteLength < 1) return;
+  const msgType = new DataView(data).getUint8(0);
 
+  if (msgType === SHAKE_FRAME_MSG) {
+    if (data.byteLength < FRAME_BYTES) return;
+    decodeShakeFrame(data);
+  } else if (msgType === POUR_RESULT_MSG) {
+    const result = decodePourResult(data);
+    if (result) dcPourResultCb?.(result);
+  }
+}
+
+function decodeShakeFrame(data: ArrayBuffer): void {
+  const view = new DataView(data);
   const seq = view.getUint16(1, false);
   const cupPosition = {
     x: view.getFloat32(4, false),
@@ -154,9 +172,113 @@ function handleIncomingBinary(data: ArrayBuffer): void {
       },
     });
   }
-
   pushShakeFrame({ cupPosition, cupQuaternion, diceStates, seq });
 }
+
+// --- Pour result via DC ---
+
+const POUR_HEADER = 8; // msgType(1) + finalValues(5) + numFrames(2)
+const POUR_FRAME_BYTES = 168; // cup(28) + 5 dice(140)
+
+export function sendPourResultViaDC(result: PourResult): boolean {
+  if (!dc || dc.readyState !== 'open') return false;
+
+  const numFrames = result.cupTrajectory.length;
+  const buf = new ArrayBuffer(POUR_HEADER + numFrames * POUR_FRAME_BYTES);
+  const view = new DataView(buf);
+
+  view.setUint8(0, POUR_RESULT_MSG);
+  for (let i = 0; i < 5; i++) {
+    view.setUint8(1 + i, result.finalValues[i] & 0xFF);
+  }
+  view.setUint16(6, numFrames, false);
+
+  let off = POUR_HEADER;
+  for (let f = 0; f < numFrames; f++) {
+    const cup = result.cupTrajectory[f];
+    view.setFloat32(off, cup.position.x, false); off += 4;
+    view.setFloat32(off, cup.position.y, false); off += 4;
+    view.setFloat32(off, cup.position.z, false); off += 4;
+    view.setFloat32(off, cup.quaternion.x, false); off += 4;
+    view.setFloat32(off, cup.quaternion.y, false); off += 4;
+    view.setFloat32(off, cup.quaternion.z, false); off += 4;
+    view.setFloat32(off, cup.quaternion.w, false); off += 4;
+
+    const dice = result.diceTrajectory[f];
+    for (let d = 0; d < 5; d++) {
+      view.setFloat32(off, dice[d].position.x, false); off += 4;
+      view.setFloat32(off, dice[d].position.y, false); off += 4;
+      view.setFloat32(off, dice[d].position.z, false); off += 4;
+      view.setFloat32(off, dice[d].quaternion.x, false); off += 4;
+      view.setFloat32(off, dice[d].quaternion.y, false); off += 4;
+      view.setFloat32(off, dice[d].quaternion.z, false); off += 4;
+      view.setFloat32(off, dice[d].quaternion.w, false); off += 4;
+    }
+  }
+
+  try {
+    dc.send(buf);
+    pushDebugLog('DC_POUR_SENT', { frames: numFrames, bytes: buf.byteLength });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function decodePourResult(data: ArrayBuffer): PourResult | null {
+  if (data.byteLength < POUR_HEADER) return null;
+  const view = new DataView(data);
+
+  const finalValues: number[] = [];
+  for (let i = 0; i < 5; i++) finalValues.push(view.getUint8(1 + i));
+
+  const numFrames = view.getUint16(6, false);
+  if (data.byteLength < POUR_HEADER + numFrames * POUR_FRAME_BYTES) return null;
+
+  const cupTrajectory: PourResult['cupTrajectory'] = [];
+  const diceTrajectory: PourResult['diceTrajectory'] = [];
+
+  let off = POUR_HEADER;
+  for (let f = 0; f < numFrames; f++) {
+    cupTrajectory.push({
+      position: {
+        x: view.getFloat32(off, false),
+        y: view.getFloat32(off + 4, false),
+        z: view.getFloat32(off + 8, false),
+      },
+      quaternion: {
+        x: view.getFloat32(off + 12, false),
+        y: view.getFloat32(off + 16, false),
+        z: view.getFloat32(off + 20, false),
+        w: view.getFloat32(off + 24, false),
+      },
+    });
+    off += 28;
+
+    const frameDice: Array<{ position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } }> = [];
+    for (let d = 0; d < 5; d++) {
+      frameDice.push({
+        position: {
+          x: view.getFloat32(off, false),
+          y: view.getFloat32(off + 4, false),
+          z: view.getFloat32(off + 8, false),
+        },
+        quaternion: {
+          x: view.getFloat32(off + 12, false),
+          y: view.getFloat32(off + 16, false),
+          z: view.getFloat32(off + 20, false),
+          w: view.getFloat32(off + 24, false),
+        },
+      });
+      off += 28;
+    }
+    diceTrajectory.push(frameDice);
+  }
+
+  return { cupTrajectory, diceTrajectory, finalValues };
+}
+
+// --- Shake frame send (unchanged) ---
 
 export function sendShakeFrame(
   seq: number,

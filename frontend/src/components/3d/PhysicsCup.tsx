@@ -5,7 +5,7 @@ import { soundManager } from '../../utils/soundManager';
 import { getPhysicsEngine, emitPourResult, onPourResult, onAiPour } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
 import { interpolateShake, isShakeActive, getShakeConsumeState } from '../../network/shakeBuffer';
-import { sendShakeFrame } from '../../network/shakeDataChannel';
+import { sendShakeFrame, sendPourResultViaDC } from '../../network/shakeDataChannel';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import { pushDebugLog } from '../ui/DebugOverlay';
 import * as THREE from 'three';
@@ -524,7 +524,7 @@ export function PhysicsCup() {
             });
 
             if (localResult) {
-              // Play our own result as final — no preview, no server reconcile.
+              sendPourResultViaDC(localResult);
               emitPourResult(localResult);
             }
             // If dice weren't ready, the server falls back to its own sim and

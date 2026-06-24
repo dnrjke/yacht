@@ -5,9 +5,11 @@ import { emitPourResult, getPhysicsEngine } from '../physics/physicsEngine';
 import { getReconnectInfo, clearReconnectInfo } from './identity';
 import { pushShakeFrame, clearShakeBuffer, getShakeMetrics, resetShakeMetrics, setServerTimelines } from './shakeBuffer';
 import { applySpectatorPourBuffer } from './spectatorBuffer';
-import { initShakeDataChannel, closeShakeDataChannel } from './shakeDataChannel';
+import { initShakeDataChannel, closeShakeDataChannel, registerDCPourHandler } from './shakeDataChannel';
 import { soundManager } from '../utils/soundManager';
 import { pushDebugLog } from '../components/ui/DebugOverlay';
+
+let pourPlayedThisRoll = false;
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
@@ -69,18 +71,40 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
     }
   });
 
-  socket.on('POUR_RESULT', (result: any) => {
+  registerDCPourHandler((result) => {
+    if (pourPlayedThisRoll) return;
+    pourPlayedThisRoll = true;
     const shakeMetricsSnapshot = getShakeMetrics();
     clearShakeBuffer();
     resetShakeMetrics();
-    pushDebugLog('POUR_RESULT', { finalValues: result.finalValues, rollCount: result.rollCount, frames: result.diceTrajectory?.length, serverSimMs: result.serverSimMs });
+    pushDebugLog('DC_POUR_RESULT', { finalValues: result.finalValues, frames: result.diceTrajectory?.length });
     pushDebugLog('SHAKE_METRICS', shakeMetricsSnapshot);
+    emitPourResult(result);
+  });
+
+  socket.on('POUR_RESULT', (result: any) => {
+    const alreadyPlayed = pourPlayedThisRoll;
+    clearShakeBuffer();
+    resetShakeMetrics();
+
+    if (!alreadyPlayed) {
+      const shakeMetricsSnapshot = getShakeMetrics();
+      pushDebugLog('POUR_RESULT', { finalValues: result.finalValues, rollCount: result.rollCount, frames: result.diceTrajectory?.length, serverSimMs: result.serverSimMs });
+      pushDebugLog('SHAKE_METRICS', shakeMetricsSnapshot);
+    } else {
+      pushDebugLog('POUR_RESULT_DEDUP', { rollCount: result.rollCount, rollId: result.rollId });
+    }
+
     const s = useGameStore.getState();
     if (s.gameMode === 'online') {
       if (!isCurrentTurnEvent(result.turnNumber)) return;
       s.setRollCount(result.rollCount);
       s.setOnlineContext(result.turnNumber, result.rollId);
     }
+
+    if (alreadyPlayed) return;
+    pourPlayedThisRoll = true;
+
     const isSpectator = s.gameMode === 'online' && s.currentTurn !== s.myRole;
     const bufferedResult = isSpectator ? applySpectatorPourBuffer(result) : result;
     if (isSpectator) {
@@ -146,6 +170,7 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
   });
 
   socket.on('CAN_POUR', ({ turnNumber, rollId }: { turnNumber?: number; rollId?: number } = {}) => {
+    pourPlayedThisRoll = false;
     pushDebugLog('CAN_POUR', { turnNumber, rollId });
     const s = useGameStore.getState();
     if (s.gameMode === 'online' && !isCurrentTurnEvent(turnNumber)) return;
