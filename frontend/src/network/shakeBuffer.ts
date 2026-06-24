@@ -208,6 +208,7 @@ export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: nu
   }
 
   if (typeof seq === 'number') {
+    if (metrics.lastSeq >= 0 && seq <= metrics.lastSeq) return;
     if (metrics.lastSeq >= 0 && seq > metrics.lastSeq + 1) {
       metrics.seqGaps.push(seq - metrics.lastSeq - 1);
     }

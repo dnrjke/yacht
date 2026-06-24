@@ -5,6 +5,7 @@ import { emitPourResult, getPhysicsEngine } from '../physics/physicsEngine';
 import { getReconnectInfo, clearReconnectInfo } from './identity';
 import { pushShakeFrame, clearShakeBuffer, getShakeMetrics, resetShakeMetrics, setServerTimelines } from './shakeBuffer';
 import { applySpectatorPourBuffer } from './spectatorBuffer';
+import { initShakeDataChannel, closeShakeDataChannel } from './shakeDataChannel';
 import { soundManager } from '../utils/soundManager';
 import { pushDebugLog } from '../components/ui/DebugOverlay';
 
@@ -55,6 +56,9 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
     const reconnect = getReconnectInfo();
     if (reconnect) s.setRoomId(reconnect.roomId);
     s.setPhase(snapshot.phase === 'finished' ? 'GAME_OVER' : 'GAME');
+    if (snapshot.phase !== 'finished') {
+      initShakeDataChannel(socket!);
+    }
   });
 
   socket.on('RECONNECT_FAIL', () => {
@@ -184,6 +188,7 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
   });
 
   socket.on('GAME_OVER', ({ scores }: { scores: any }) => {
+    closeShakeDataChannel();
     const s = useGameStore.getState();
     s.setScores(scores);
     s.setPhase('GAME_OVER');
@@ -242,10 +247,15 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
     setServerTimelines(data?.arrivalTimeline ?? null, data?.p1Emit ?? null);
   });
 
+  socket.on('GAME_START', () => {
+    initShakeDataChannel(socket!);
+  });
+
   return socket;
 }
 
 export function disconnectSocket(): void {
+  closeShakeDataChannel();
   if (socket) {
     socket.disconnect();
     socket = null;

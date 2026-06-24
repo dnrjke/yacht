@@ -3,6 +3,7 @@ import { useGameStore } from '../../store/gameStore';
 import { getPhysicsEngine } from '../../physics/physicsEngine';
 import { getShakeBufferDebugSnapshot, getShakeMetrics, getShakeTimeline } from '../../network/shakeBuffer';
 import { getSpectatorBufferDebugSnapshot } from '../../network/spectatorBuffer';
+import { getActiveTransport } from '../../network/shakeDataChannel';
 import { getCupVisualDebugSnapshot, getCupFrameTrace, isCurrentlyFreezing } from '../3d/PhysicsCup';
 import { getDicePlaybackDebugSnapshot, getRenderedDiceDebugSnapshot } from '../3d/PhysicsDice';
 
@@ -114,6 +115,7 @@ function buildSnapshot() {
 
   snap.spectatorBuffer = spectatorBuffer;
   snap.shakeBuffer = shakeBuffer;
+  snap.shakeTransport = getActiveTransport();
   snap.shakeMetrics = getShakeMetrics();
   snap.cupFrameTrace = getCupFrameTrace();
   snap.shakeTimeline = getShakeTimeline();
@@ -312,6 +314,7 @@ export function DebugOverlay() {
       )}
 
       <Section title="Spectator Buffer">
+        <Row label="transport" value={getActiveTransport()} warn={getActiveTransport() === 'socketio'} />
         <Row label="pourBuf" value={spectatorBuffer ? `${spectatorBuffer.remainingMs}ms/${spectatorBuffer.bufferMs}ms` : 'null'} />
         <Row label="shakeBuf" value={`${shakeBuffer.size} frames ${shakeBuffer.bufferMs}ms`} />
         <Row label="shakeAge" value={`${shakeBuffer.lastReceivedAgeMs ?? 'null'}ms`} />

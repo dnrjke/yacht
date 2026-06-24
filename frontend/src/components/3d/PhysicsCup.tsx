@@ -5,6 +5,7 @@ import { soundManager } from '../../utils/soundManager';
 import { getPhysicsEngine, emitPourResult, onPourResult, onAiPour } from '../../physics/physicsEngine';
 import { getSocket } from '../../network/socket';
 import { interpolateShake, isShakeActive, getShakeConsumeState } from '../../network/shakeBuffer';
+import { sendShakeFrame } from '../../network/shakeDataChannel';
 import type { PourResult } from '../../physics/PhysicsWorld';
 import { pushDebugLog } from '../ui/DebugOverlay';
 import * as THREE from 'three';
@@ -466,21 +467,28 @@ export function PhysicsCup() {
             // replays the identical trajectory instead of a server re-sim.
             let localResult: PourResult | null = null;
             if (physics) {
-              // Final shake frame: cup + dice from the same physics snapshot.
               const cupState = physics.getCupState();
+              const diceStates = physics.getDiceStates();
+              const seq = shakeSeq.current++;
               const emitNow = performance.now();
               if (emitTimelineBase === 0) emitTimelineBase = emitNow;
               if (emitTimeline.length < EMIT_TIMELINE_CAP) {
                 emitTimeline.push(Math.round(emitNow - emitTimelineBase));
               }
-              sock.emit('CUP_SHAKE_STATE', {
-                turnNumber: s.onlineTurnNumber,
-                seq: shakeSeq.current++,
-                clientSentAt: Date.now(),
-                cupPosition: cupState.position,
-                cupQuaternion: cupState.quaternion,
-                diceStates: physics.getDiceStates(),
-              });
+              const sent = sendShakeFrame(
+                seq, s.onlineTurnNumber,
+                cupState.position, cupState.quaternion, diceStates,
+              );
+              if (!sent) {
+                sock.emit('CUP_SHAKE_STATE', {
+                  turnNumber: s.onlineTurnNumber,
+                  seq,
+                  clientSentAt: Date.now(),
+                  cupPosition: cupState.position,
+                  cupQuaternion: cupState.quaternion,
+                  diceStates,
+                });
+              }
               physics.reconcileDiceInCupPositions();
               if (physics.allDiceReadyToPour()) {
                 const simStartedAt = Date.now();
@@ -702,24 +710,28 @@ export function PhysicsCup() {
       if (s.gameMode === 'online') {
         const sock = getSocket();
         if (sock) {
-          // Send the cup and dice from the SAME physics snapshot (last step) so
-          // they stay glued for the spectator. Using the rendered cupRef here
-          // (one frame ahead of the not-yet-stepped dice) makes the dice look
-          // detached from the cup on the spectator's screen.
           const cupState = physics.getCupState();
+          const diceStates = physics.getDiceStates();
+          const seq = shakeSeq.current++;
           const emitNow = performance.now();
           if (emitTimelineBase === 0) emitTimelineBase = emitNow;
           if (emitTimeline.length < EMIT_TIMELINE_CAP) {
             emitTimeline.push(Math.round(emitNow - emitTimelineBase));
           }
-          sock.emit('CUP_SHAKE_STATE', {
-            turnNumber: s.onlineTurnNumber,
-            seq: shakeSeq.current++,
-            clientSentAt: Date.now(),
-            cupPosition: cupState.position,
-            cupQuaternion: cupState.quaternion,
-            diceStates: physics.getDiceStates(),
-          });
+          const sent = sendShakeFrame(
+            seq, s.onlineTurnNumber,
+            cupState.position, cupState.quaternion, diceStates,
+          );
+          if (!sent) {
+            sock.emit('CUP_SHAKE_STATE', {
+              turnNumber: s.onlineTurnNumber,
+              seq,
+              clientSentAt: Date.now(),
+              cupPosition: cupState.position,
+              cupQuaternion: cupState.quaternion,
+              diceStates,
+            });
+          }
         }
       }
 

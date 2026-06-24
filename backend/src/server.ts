@@ -8,6 +8,7 @@ import { RoomManager, Room, PlayerSlot } from './RoomManager';
 import { GameActions } from './GameActions';
 import { ServerAutoPlay } from './ServerAutoPlay';
 import { RoomPhysicsLoop } from './RoomPhysicsLoop';
+import { handleDCOffer, handleDCIce, cleanupRoomRelay, isDCActive } from './webrtcRelay';
 
 dotenv.config();
 
@@ -119,7 +120,7 @@ function validateShakeState(data: any): boolean {
 const BOUND_EVENTS = [
   'CUP_SHAKE_STATE', 'POUR_CUP', 'KEEP_DIE', 'UNKEEP_DIE',
   'REROLL', 'COLLECTION_DONE', 'SUBMIT_SCORE', 'REQUEST_REMATCH',
-  'RESUME_CONTROL', 'disconnect',
+  'RESUME_CONTROL', 'DC_OFFER', 'DC_ICE', 'disconnect',
 ];
 
 function tryResumeAutoPlay(room: Room): void {
@@ -144,6 +145,7 @@ function cleanupRoom(roomId: string): void {
   roomPhysicsLoopMap.delete(roomId);
   roomAutoPlayMap.delete(roomId);
   roomActionsMap.delete(roomId);
+  cleanupRoomRelay(roomId);
   roomManager.destroyRoom(roomId);
 }
 
@@ -236,6 +238,29 @@ function bindGameEvents(socket: Socket, room: Room, slot: PlayerSlot): void {
   socket.on('RESUME_CONTROL', () => {
     if (room.state.currentTurn !== role) return;
     tryResumeAutoPlay(room);
+  });
+
+  socket.on('DC_OFFER', async (data: { sdp: string }, ack?: (res: any) => void) => {
+    try {
+      const answer = await handleDCOffer(
+        room.id,
+        role,
+        data.sdp,
+        (candidate) => socket.emit('DC_ICE', candidate),
+      );
+      if (typeof ack === 'function') {
+        ack({ sdp: answer.sdp });
+      } else {
+        socket.emit('DC_ANSWER', { sdp: answer.sdp });
+      }
+    } catch (e: any) {
+      console.error(`DC_OFFER error (${role}):`, e.message);
+      if (typeof ack === 'function') ack({ error: e.message });
+    }
+  });
+
+  socket.on('DC_ICE', (data: { candidate: string; sdpMid?: string }) => {
+    handleDCIce(room.id, role, data).catch(() => {});
   });
 
   socket.on('REQUEST_REMATCH', () => {

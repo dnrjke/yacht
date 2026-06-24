@@ -1,5 +1,6 @@
 import { Server } from 'socket.io';
 import { Room } from './RoomManager';
+import { isDCActive } from './webrtcRelay';
 
 type Role = 'p1' | 'p2';
 
@@ -82,6 +83,11 @@ export class RoomPhysicsLoop {
     }
     if (!this.room.state.validateTurnContext(data.turnNumber)) {
       this.metrics.contextFail++;
+      return;
+    }
+
+    if (isDCActive(this.room.id)) {
+      this.metrics.relayed++;
       return;
     }
 
