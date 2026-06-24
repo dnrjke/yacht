@@ -10,7 +10,7 @@ interface ShakeFrame {
 
 const buffer: ShakeFrame[] = [];
 const BUFFER_MAX = 24;
-const STALE_MS = 900;
+const STALE_MS = 300;
 const FRAME_DT = 1000 / 60;
 
 const MIN_DELAY_MS = 30;
@@ -20,17 +20,15 @@ const JITTER_EWMA_ALPHA = 0.1;
 
 const RATE_MIN = 0.95;
 const RATE_MAX = 1.05;
-const RATE_ADJUST_SPEED = 0.002;
+const RATE_MAX_HIGH = 1.10;
+const RATE_ADJUST_SPEED = 0.005;
 const TARGET_BUFFER_FRAMES = 3;
 
 const BURST_THRESHOLD_MS = 8;
-const RAMP_FRAMES = 6;
-const RAMP_DURATION_MS = 100;
 
 let lastReceived = 0;
-let shakeStartTime = 0;
-let frameCount = 0;
 let lastConsumedFrame: ShakeFrame | null = null;
+let wasStarved = false;
 
 let targetDelay = MIN_DELAY_MS;
 let jitterEwma = 0;
@@ -89,7 +87,7 @@ function updateJitter(now: number): void {
 }
 
 function spreadBurstFrames(): void {
-  if (buffer.length < 3) return;
+  if (buffer.length < 2) return;
 
   let burstEnd = buffer.length - 1;
   let burstStart = burstEnd;
@@ -113,7 +111,9 @@ function spreadBurstFrames(): void {
 }
 
 function updateConsumeRate(): void {
-  if (buffer.length > TARGET_BUFFER_FRAMES + 2) {
+  if (buffer.length > TARGET_BUFFER_FRAMES + 6) {
+    consumeRate = Math.min(RATE_MAX_HIGH, consumeRate + RATE_ADJUST_SPEED * 2);
+  } else if (buffer.length > TARGET_BUFFER_FRAMES + 2) {
     consumeRate = Math.min(RATE_MAX, consumeRate + RATE_ADJUST_SPEED);
   } else if (buffer.length < TARGET_BUFFER_FRAMES - 1 && buffer.length > 0) {
     consumeRate = Math.max(RATE_MIN, consumeRate - RATE_ADJUST_SPEED);
@@ -122,11 +122,8 @@ function updateConsumeRate(): void {
   }
 }
 
-function getEffectiveDelay(now: number): number {
-  if (frameCount < RAMP_FRAMES || shakeStartTime === 0) return 0;
-  const elapsed = now - shakeStartTime;
-  const rampProgress = Math.min(1, (elapsed - RAMP_FRAMES * FRAME_DT) / RAMP_DURATION_MS);
-  return targetDelay * Math.max(0, rampProgress);
+function getEffectiveDelay(): number {
+  return targetDelay;
 }
 
 function getTargetTime(now: number): number {
@@ -138,7 +135,7 @@ function getTargetTime(now: number): number {
   const wallDelta = now - lastConsumeWall;
   lastConsumeWall = now;
   virtualTime += wallDelta * consumeRate;
-  return virtualTime - getEffectiveDelay(now);
+  return virtualTime - getEffectiveDelay();
 }
 
 export function getShakeMetrics() {
@@ -200,7 +197,6 @@ export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: nu
   metrics.lastArrival = now;
 
   if (timelineBase === 0) timelineBase = now;
-  if (shakeStartTime === 0) shakeStartTime = now;
 
   const seq = (data as any).seq;
   if (arrivalTimeline.length < TIMELINE_CAP * 3) {
@@ -229,7 +225,6 @@ export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: nu
 
   spreadBurstFrames();
 
-  frameCount++;
   lastReceived = now;
 
   while (buffer.length > BUFFER_MAX) {
@@ -251,12 +246,19 @@ export function interpolateShake(): ShakeFrame | null {
   updateConsumeRate();
 
   if (buffer.length === 1) {
+    wasStarved = true;
     metrics.bufferSizeAtConsume.push(buffer.length);
     if (timelineBase > 0 && consumeTimeline.length < TIMELINE_CAP * 4) {
       consumeTimeline.push(Math.round(now - timelineBase), buffer.length, 0, 0);
     }
     lastConsumedFrame = buffer[0];
     return buffer[0];
+  }
+
+  if (wasStarved) {
+    wasStarved = false;
+    lastConsumeWall = now;
+    virtualTime = buffer[0].receivedAt + getEffectiveDelay();
   }
 
   const targetTime = getTargetTime(now);
@@ -304,9 +306,8 @@ export function isShakeActive(): boolean {
 export function clearShakeBuffer(): void {
   buffer.length = 0;
   lastReceived = 0;
-  shakeStartTime = 0;
-  frameCount = 0;
   lastConsumedFrame = null;
+  wasStarved = false;
   targetDelay = MIN_DELAY_MS;
   jitterEwma = 0;
   lastArrivalTime = 0;
