@@ -14,7 +14,7 @@ interface LogEntry {
 }
 
 const MAX_LOG = 50;
-const DEBUG_SCHEMA = 'online-pour-debug-v18';
+const DEBUG_SCHEMA = 'online-pour-debug-v19';
 
 let logBuffer: LogEntry[] = [];
 let logSeq = 0;
@@ -314,7 +314,7 @@ export function DebugOverlay() {
       )}
 
       <Section title="Spectator Buffer">
-        <Row label="transport" value={getActiveTransport()} warn={getActiveTransport() === 'socketio'} />
+        <Row label="shake DC" value={getActiveTransport() === 'webrtc' ? 'P2P webrtc' : 'socketio (fallback)'} warn={getActiveTransport() === 'socketio'} />
         <Row label="pourBuf" value={spectatorBuffer ? `${spectatorBuffer.remainingMs}ms/${spectatorBuffer.bufferMs}ms` : 'null'} />
         <Row label="shakeBuf" value={`${shakeBuffer.size} frames ${shakeBuffer.bufferMs}ms`} />
         <Row label="shakeAge" value={`${shakeBuffer.lastReceivedAgeMs ?? 'null'}ms`} />

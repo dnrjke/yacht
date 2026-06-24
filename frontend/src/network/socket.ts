@@ -57,7 +57,7 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
     if (reconnect) s.setRoomId(reconnect.roomId);
     s.setPhase(snapshot.phase === 'finished' ? 'GAME_OVER' : 'GAME');
     if (snapshot.phase !== 'finished') {
-      initShakeDataChannel(socket!);
+      initShakeDataChannel(socket!, snapshot.myRole as 'p1' | 'p2');
     }
   });
 
@@ -247,8 +247,8 @@ export function connectSocket(options: ConnectSocketOptions = {}): Socket {
     setServerTimelines(data?.arrivalTimeline ?? null, data?.p1Emit ?? null);
   });
 
-  socket.on('GAME_START', () => {
-    initShakeDataChannel(socket!);
+  socket.on('GAME_START', ({ yourRole }: { yourRole: 'p1' | 'p2' }) => {
+    initShakeDataChannel(socket!, yourRole);
   });
 
   return socket;

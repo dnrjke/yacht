@@ -29,6 +29,7 @@ const BURST_THRESHOLD_MS = 8;
 let lastReceived = 0;
 let lastConsumedFrame: ShakeFrame | null = null;
 let wasStarved = false;
+let lastPushWall = 0;
 
 let targetDelay = MIN_DELAY_MS;
 let jitterEwma = 0;
@@ -129,7 +130,7 @@ function getEffectiveDelay(): number {
 function getTargetTime(now: number): number {
   if (lastConsumeWall === 0) {
     lastConsumeWall = now;
-    virtualTime = now;
+    virtualTime = now + getEffectiveDelay();
     return now;
   }
   const wallDelta = now - lastConsumeWall;
@@ -217,6 +218,9 @@ export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: nu
 
   updateJitter(now);
 
+  const isBurst = lastPushWall > 0 && (now - lastPushWall) < BURST_THRESHOLD_MS;
+  lastPushWall = now;
+
   buffer.push({
     cupPosition: data.cupPosition,
     cupQuaternion: data.cupQuaternion,
@@ -224,7 +228,7 @@ export function pushShakeFrame(data: Omit<ShakeFrame, 'receivedAt'> & { seq?: nu
     receivedAt: now,
   });
 
-  spreadBurstFrames();
+  if (isBurst) spreadBurstFrames();
 
   lastReceived = now;
 
@@ -309,6 +313,7 @@ export function clearShakeBuffer(): void {
   lastReceived = 0;
   lastConsumedFrame = null;
   wasStarved = false;
+  lastPushWall = 0;
   targetDelay = MIN_DELAY_MS;
   jitterEwma = 0;
   lastArrivalTime = 0;

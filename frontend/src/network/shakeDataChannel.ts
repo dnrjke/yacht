@@ -10,13 +10,15 @@ let pc: RTCPeerConnection | null = null;
 let dc: RTCDataChannel | null = null;
 let transport: 'socketio' | 'webrtc' = 'socketio';
 let setupTimer: ReturnType<typeof setTimeout> | null = null;
+let boundSocket: Socket | null = null;
 
 export function getActiveTransport(): 'socketio' | 'webrtc' {
   return transport;
 }
 
-export function initShakeDataChannel(socket: Socket): void {
+export function initShakeDataChannel(socket: Socket, role: 'p1' | 'p2'): void {
   if (pc) closeShakeDataChannel();
+  boundSocket = socket;
 
   try {
     pc = new RTCPeerConnection({
@@ -26,34 +28,6 @@ export function initShakeDataChannel(socket: Socket): void {
     pushDebugLog('DC_INIT_FAIL', { reason: 'RTCPeerConnection unavailable' });
     return;
   }
-
-  dc = pc.createDataChannel('shake', {
-    ordered: false,
-    maxRetransmits: 0,
-  });
-
-  dc.binaryType = 'arraybuffer';
-
-  dc.onopen = () => {
-    transport = 'webrtc';
-    if (setupTimer) { clearTimeout(setupTimer); setupTimer = null; }
-    pushDebugLog('DC_OPEN', {});
-  };
-
-  dc.onclose = () => {
-    transport = 'socketio';
-    pushDebugLog('DC_CLOSE', {});
-  };
-
-  dc.onerror = () => {
-    transport = 'socketio';
-  };
-
-  dc.onmessage = (ev) => {
-    if (ev.data instanceof ArrayBuffer) {
-      handleIncomingBinary(ev.data);
-    }
-  };
 
   pc.onicecandidate = (ev) => {
     if (ev.candidate) {
@@ -72,27 +46,48 @@ export function initShakeDataChannel(socket: Socket): void {
     })).catch(() => {});
   });
 
-  pc.createOffer()
-    .then((offer) => pc!.setLocalDescription(offer))
-    .then(() => {
-      const sdp = pc!.localDescription!.sdp;
-      socket.emit('DC_OFFER', { sdp }, (res: any) => {
-        if (!res || res.error || !res.sdp) {
-          socket.once('DC_ANSWER', (ans: { sdp: string }) => {
-            if (!pc) return;
-            pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: ans.sdp }))
-              .catch(() => {});
-          });
-          return;
-        }
-        if (!pc) return;
-        pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: res.sdp }))
-          .catch(() => {});
-      });
-    })
-    .catch(() => {
-      pushDebugLog('DC_OFFER_FAIL', {});
+  if (role === 'p1') {
+    dc = pc.createDataChannel('shake', {
+      ordered: false,
+      maxRetransmits: 0,
     });
+    dc.binaryType = 'arraybuffer';
+    setupDCHandlers(dc);
+
+    pc.createOffer()
+      .then((offer) => pc!.setLocalDescription(offer))
+      .then(() => {
+        socket.emit('DC_OFFER', { sdp: pc!.localDescription!.sdp });
+      })
+      .catch(() => {
+        pushDebugLog('DC_OFFER_FAIL', {});
+      });
+
+    socket.on('DC_ANSWER', (data: { sdp: string }) => {
+      if (!pc) return;
+      pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }))
+        .catch(() => {});
+    });
+  } else {
+    pc.ondatachannel = (ev) => {
+      dc = ev.channel;
+      dc.binaryType = 'arraybuffer';
+      setupDCHandlers(dc);
+    };
+
+    socket.on('DC_OFFER', (data: { sdp: string }) => {
+      if (!pc) return;
+      pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }))
+        .then(() => pc!.createAnswer())
+        .then((answer) => pc!.setLocalDescription(answer))
+        .then(() => {
+          socket.emit('DC_ANSWER', { sdp: pc!.localDescription!.sdp });
+        })
+        .catch(() => {
+          pushDebugLog('DC_ANSWER_FAIL', {});
+        });
+    });
+  }
 
   setupTimer = setTimeout(() => {
     setupTimer = null;
@@ -100,6 +95,29 @@ export function initShakeDataChannel(socket: Socket): void {
       pushDebugLog('DC_TIMEOUT', {});
     }
   }, SETUP_TIMEOUT_MS);
+}
+
+function setupDCHandlers(channel: RTCDataChannel): void {
+  channel.onopen = () => {
+    transport = 'webrtc';
+    if (setupTimer) { clearTimeout(setupTimer); setupTimer = null; }
+    pushDebugLog('DC_OPEN', {});
+  };
+
+  channel.onclose = () => {
+    transport = 'socketio';
+    pushDebugLog('DC_CLOSE', {});
+  };
+
+  channel.onerror = () => {
+    transport = 'socketio';
+  };
+
+  channel.onmessage = (ev) => {
+    if (ev.data instanceof ArrayBuffer) {
+      handleIncomingBinary(ev.data);
+    }
+  };
 }
 
 function handleIncomingBinary(data: ArrayBuffer): void {
@@ -194,4 +212,10 @@ export function closeShakeDataChannel(): void {
   dc = null;
   pc = null;
   transport = 'socketio';
+  if (boundSocket) {
+    boundSocket.off('DC_ICE');
+    boundSocket.off('DC_OFFER');
+    boundSocket.off('DC_ANSWER');
+    boundSocket = null;
+  }
 }
