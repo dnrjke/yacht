@@ -6,9 +6,6 @@ export interface PourResult {
   cupTrajectory: Array<{ position: { x: number; y: number; z: number }; quaternion: { x: number; y: number; z: number; w: number } }>;
   finalValues: number[];
   preview?: boolean;
-  spectator?: boolean;
-  spectatorBufferMs?: number;
-  scheduledStartAt?: number;
   serverSimMs?: number;
 }
 

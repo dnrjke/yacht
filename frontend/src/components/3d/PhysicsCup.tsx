@@ -31,7 +31,7 @@ const EMIT_TIMELINE_CAP = 300;
 let emitTimeline: number[] = [];
 let emitTimelineBase = 0;
 
-type CupPlayback = { frames: any[], time: number, preview?: boolean, scheduledStartAt?: number };
+type CupPlayback = { frames: any[], time: number, preview?: boolean };
 
 interface CupVisualDebugSnapshot {
   updatedAt: number;
@@ -390,7 +390,7 @@ export function PhysicsCup() {
         : 0;
       if (!result.preview) lastPreviewCupPlaybackTime = 0;
       isPouring.current = true;
-      cupPlayback.current = { frames, time: initialTime, preview: result.preview, scheduledStartAt: result.scheduledStartAt };
+      cupPlayback.current = { frames, time: initialTime, preview: result.preview };
       soundManager.stopLoop('rolling_dice', 200);
       if (result.preview || initialTime === 0) {
         soundManager.play('pouring_dice', { delay: POURING_DELAY_MS });
@@ -562,11 +562,6 @@ export function PhysicsCup() {
       const pb = cupPlayback.current;
       const lastIdx = pb.frames.length - 1;
 
-      if (pb.scheduledStartAt && performance.now() < pb.scheduledStartAt) {
-        updateCupVisualDebugSnapshot('cupPlayback', cupRef.current, pb);
-        return;
-      }
-      pb.scheduledStartAt = undefined;
       pb.time += Math.min(delta, FRAME_DT);
       if (pb.preview) lastPreviewCupPlaybackTime = pb.time;
       const fi = pb.time / FRAME_DT;
@@ -819,10 +814,8 @@ function updateCupVisualDebugSnapshot(
       currentFrame,
       totalFrames: playback.frames.length,
       elapsedMs: Math.round(playback.time * 1000),
-      remainingMs: playback.scheduledStartAt && performance.now() < playback.scheduledStartAt
-        ? Math.round(playback.scheduledStartAt - performance.now())
-        : Math.max(0, Math.round(((playback.frames.length - 1) * frameDt - playback.time) * 1000)),
-      buffering: Boolean(playback.scheduledStartAt && performance.now() < playback.scheduledStartAt),
+      remainingMs: Math.max(0, Math.round(((playback.frames.length - 1) * frameDt - playback.time) * 1000)),
+      buffering: false,
     } : undefined,
     lastPointerUp: lastCupPointerUp ? {
       ...lastCupPointerUp,
