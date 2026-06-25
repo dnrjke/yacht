@@ -318,6 +318,7 @@ export function GameScreen() {
               <button
                 onClick={() => {
                   setShowHomeConfirm(false);
+                  soundManager.stopAll();
                   const s = useGameStore.getState();
                   if (s.gameMode === 'online') {
                     disconnectSocket();
